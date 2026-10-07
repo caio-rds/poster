@@ -10,7 +10,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from app.agent import EditorialAgent, embedding_text
-from app.collectors import USER_AGENT, InstagramCollector, WebsiteCollector
+from app.collectors import USER_AGENT, InstagramCollector, WebsiteCollector, WordPressCollector
 from app.config import Settings, get_settings
 from app.database import create_client, ensure_indexes
 from app.errors import failure_hint
@@ -134,14 +134,20 @@ class Pipeline:
                 logger.warning("Coleta do Instagram indisponível (%s)", type(exc).__name__)
                 if self.settings.instagram_required:
                     raise RuntimeError("Instagram obrigatório indisponível") from None
-        async for source in WebsiteCollector(client, self.settings).collect():
-            try:
-                await self.process(source)
-            except Exception as exc:
-                failures += 1
-                logger.error(
-                    "Falha ao processar %s: %s; tentará novamente", source.url, failure_hint(exc)
-                )
+        for collector in (
+            WebsiteCollector(client, self.settings),
+            WordPressCollector(client, self.settings),
+        ):
+            async for source in collector.collect():
+                try:
+                    await self.process(source)
+                except Exception as exc:
+                    failures += 1
+                    logger.error(
+                        "Falha ao processar %s: %s; tentará novamente",
+                        source.url,
+                        failure_hint(exc),
+                    )
         if failures:
             raise RuntimeError(f"{failures} fonte(s) não processada(s)")
 

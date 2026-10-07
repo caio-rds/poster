@@ -3,7 +3,7 @@ import logging
 import time
 import xml.etree.ElementTree as ET
 from collections import deque
-from datetime import datetime
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 from urllib.robotparser import RobotFileParser
 
@@ -15,6 +15,7 @@ from app.models import Source
 
 logger = logging.getLogger(__name__)
 SITE = "https://zionsoftwarehouse.com.br"
+WORDPRESS_API = "https://cms.zionsoftwarehouse.com.br/wp-json/wp/v2"
 USER_AGENT = "ZionContentWorker/1.0"
 
 
@@ -93,6 +94,10 @@ def internal_links(html: str, base: str) -> list[str]:
 
 def article_links(html: str, base: str) -> list[str]:
     return [url for url in internal_links(html, base) if urlsplit(url).path.startswith("/blog/")]
+
+
+def is_blog_url(url: str) -> bool:
+    return "blog" in urlsplit(url).path.lower().split("/")
 
 
 def extract_source(html: str, url: str, kind: str) -> Source:
@@ -198,7 +203,7 @@ class WebsiteCollector:
             else:
                 for location in locations:
                     candidate = page_url(location)
-                    if candidate and candidate not in pages:
+                    if candidate and not is_blog_url(candidate) and candidate not in pages:
                         pages.append(candidate)
                         if len(pages) >= self.settings.crawl_max_pages:
                             break
@@ -207,11 +212,10 @@ class WebsiteCollector:
     async def collect(self):
         await self.initialize()
         sitemap = deque(await self.sitemap_pages())
-        queue = deque([(f"{SITE}/", 0), (f"{SITE}/blog", 0)])
+        queue = deque([(f"{SITE}/", 0)])
         queued = {url for url, _ in queue}
         visited = set()
         yielded = 0
-        articles = 0
         while (queue or sitemap) and len(visited) < self.settings.crawl_max_pages:
             if not queue:
                 candidate = sitemap.popleft()
@@ -223,28 +227,97 @@ class WebsiteCollector:
             if url in visited:
                 continue
             visited.add(url)
-            is_article = urlsplit(url).path.startswith("/blog/")
-            if is_article and articles >= self.settings.max_blog_articles:
+            if is_blog_url(url):
                 continue
             try:
                 html = await self.fetch(url)
                 if depth < self.settings.crawl_max_depth:
                     for link in internal_links(html, url):
-                        if link not in queued and len(queued) < self.settings.crawl_max_pages * 5:
+                        if (
+                            not is_blog_url(link)
+                            and link not in queued
+                            and len(queued) < self.settings.crawl_max_pages * 5
+                        ):
                             queued.add(link)
                             queue.append((link, depth + 1))
-                # O índice serve para descobrir artigos; não é uma fonte de post por si só.
-                if urlsplit(url).path == "/blog":
-                    continue
-                source = extract_source(html, url, "blog" if is_article else "website")
+                source = extract_source(html, url, "website")
                 yielded += 1
-                articles += int(is_article)
                 yield source
             except (httpx.HTTPError, ValueError):
                 logger.warning("Falha ao coletar página: %s", url)
         logger.info("Coleta concluída: %s páginas visitadas, %s fontes", len(visited), yielded)
         if not yielded:
             raise ValueError("Nenhuma página com conteúdo útil foi coletada")
+
+
+class WordPressCollector:
+    def __init__(self, client: httpx.AsyncClient, settings: Settings):
+        self.client = client
+        self.settings = settings
+
+    async def collect(self):
+        per_page = min(100, self.settings.max_blog_articles)
+        page = 1
+        articles = 0
+        while articles < self.settings.max_blog_articles:
+            params = {
+                "_embed": "wp:featuredmedia",
+                "per_page": per_page,
+                "page": page,
+                "status": "publish",
+                "orderby": "date",
+                "order": "desc",
+            }
+            for attempt in range(3):
+                try:
+                    response = await self.client.get(
+                        f"{WORDPRESS_API}/posts", params=params, follow_redirects=False
+                    )
+                    response.raise_for_status()
+                    break
+                except httpx.HTTPError as exc:
+                    if isinstance(exc, httpx.HTTPStatusError):
+                        if exc.response.status_code != 429 and exc.response.status_code < 500:
+                            raise
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(2**attempt)
+            posts = response.json()
+            if not isinstance(posts, list):
+                raise ValueError("Resposta inválida da API WordPress")
+            if not posts:
+                return
+            for post in posts:
+                # O limite conta os posts consultados, inclusive os sem conteúdo útil.
+                articles += 1
+                try:
+                    slug = post["slug"]
+                    if not isinstance(slug, str) or not slug or any(c in slug for c in "/?#"):
+                        raise ValueError("Slug inválido")
+                    source = extract_source(
+                        post["content"]["rendered"], f"{SITE}/blog/{slug}", "blog"
+                    )
+                    source.title = BeautifulSoup(post["title"]["rendered"], "html.parser").get_text(
+                        " ", strip=True
+                    )
+                    source.external_id = str(post["id"])
+                    if post.get("date_gmt"):
+                        source.published_at = datetime.fromisoformat(
+                            post["date_gmt"].replace("Z", "+00:00")
+                        ).replace(tzinfo=UTC)
+                    yield source
+                except (KeyError, TypeError, ValueError):
+                    logger.warning("Post WordPress sem conteúdo válido; ignorado")
+                if articles >= self.settings.max_blog_articles:
+                    return
+            total_pages = response.headers.get("X-WP-TotalPages")
+            if total_pages is not None:
+                if page >= int(total_pages):
+                    return
+            elif len(posts) < per_page:
+                return
+            page += 1
+            await asyncio.sleep(self.settings.crawl_delay_seconds)
 
 
 class InstagramCollector:

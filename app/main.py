@@ -62,6 +62,10 @@ async def database_error(request: Request, exc: PyMongoError):
     return JSONResponse(status_code=503, content={"detail": "MongoDB indisponível"})
 
 
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
 @router.get("/posts/next", response_model=PostOut | None)
 async def next_post(repo: Repo):
     document = await repo.next_post()
@@ -98,6 +102,8 @@ async def update_status(post_id: str, body: StatusUpdate, repo: Repo):
 
 def create_app(settings: Settings | None = None, *, enable_cors=True) -> FastAPI:
     api = FastAPI(title="Zion Posts API", version="0.1.0", lifespan=lifespan)
+    api.add_api_route("/health", health, methods=["GET"], tags=["health"])
+    api.add_api_route("/health", health, methods=["HEAD"], include_in_schema=False)
     api.include_router(router)
     api.add_exception_handler(PyMongoError, database_error)
     if enable_cors:

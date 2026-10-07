@@ -3,8 +3,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 from bson import ObjectId
+from pydantic import ValidationError
 
-from app.agent import EditorialAgent, generation_format
+from app.agent import EditorialAgent, format_caption, generation_format
 from app.config import Settings
 from app.models import Draft, DuplicateDecision, Generation, Source
 
@@ -103,11 +104,12 @@ async def test_generated_hashtags_are_validated(agent, hashtags, caption):
         await agent.generate(source, [])
 
 
-async def test_complete_generated_caption_is_preserved(agent):
+@pytest.mark.parametrize("separator", [" ", "\n\n"])
+async def test_complete_generated_caption_is_preserved(agent, separator):
     source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
     post = Draft(
         title="Post",
-        caption="Texto final pronto. Fale com a Zion. #Zion #Sites #Software",
+        caption="Texto final pronto.\n\nFale com a Zion." + separator + "#Zion #Sites #Software",
         hashtags=["#Zion", "#Sites", "#Software"],
         topic="Software",
         image_brief="Arte",
@@ -121,11 +123,63 @@ async def test_complete_generated_caption_is_preserved(agent):
         )
     )
     result = await agent.generate(source, [])
-    assert result.post.caption == post.caption
+    assert result.post.caption == (
+        "Texto final pronto.\n\nFale com a Zion.\n\n#Zion #Sites #Software"
+    )
     request = agent.client.responses.parse.call_args.kwargs
     assert request["store"] is False
     assert request["input"][0]["role"] == "system"
     assert "o texto final a publicar" in request["input"][0]["content"]
+
+
+def test_caption_separates_trailing_hashtags():
+    assert format_caption("Fale com a Zion. #Zion #Sites #Software", [
+        "#Zion", "#Sites", "#Software"
+    ]) == "Fale com a Zion.\n\n#Zion #Sites #Software"
+
+
+def test_caption_breaks_dense_text_without_changing_words():
+    body = " ".join([
+        "Você consegue evoluir seu site sem depender do fornecedor?",
+        "O código próprio permite que sua empresa tenha controle sobre o projeto.",
+        "A documentação explica as tecnologias e as integrações utilizadas no sistema.",
+        "Com essas informações, sua equipe pode planejar melhorias conforme o negócio cresce.",
+        "Converse com a Zion para entender como desenvolver um sistema sob medida.",
+    ])
+    formatted = format_caption(body + " #Zion #Sites #Software", [
+        "#Zion", "#Sites", "#Software"
+    ])
+    blocks = formatted.split("\n\n")
+    assert len(blocks) >= 3
+    assert " ".join(blocks[:-1]) == body
+    assert blocks[-1] == "#Zion #Sites #Software"
+
+
+def test_caption_preserves_lists_and_normalizes_line_endings():
+    caption = (
+        "Seu site sob controle.\r\n\r\n• Código próprio\r\n• Documentação"
+        "\r\n\r\nFale com a Zion.\r\n\r\n#Zion #Sites #Software"
+    )
+    assert format_caption(caption, ["#Zion", "#Sites", "#Software"]) == caption.replace(
+        "\r\n", "\n"
+    )
+
+
+async def test_formatted_generation_respects_caption_limit(agent):
+    source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
+    caption = "A" * (2200 - len(" #Zion #Sites #Software")) + " #Zion #Sites #Software"
+    agent.client.responses.parse.return_value = SimpleNamespace(
+        output_parsed=Generation(
+            should_create=True,
+            reason="Recorte",
+            post=Draft(
+                title="Post", caption=caption, hashtags=["#Zion", "#Sites", "#Software"],
+                topic="Software", image_brief="Arte", source_urls=[source.url],
+            ),
+        )
+    )
+    with pytest.raises(ValidationError):
+        await agent.generate(source, [])
 
 
 async def test_generation_schema_requires_exact_translated_source(agent):

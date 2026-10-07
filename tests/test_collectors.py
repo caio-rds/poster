@@ -3,8 +3,10 @@ import pytest
 
 from app.collectors import (
     SITE,
+    WORDPRESS_API,
     InstagramCollector,
     WebsiteCollector,
+    WordPressCollector,
     article_links,
     extract_source,
     internal_links,
@@ -103,9 +105,11 @@ def test_internal_links_exclude_external_assets_and_keep_pagination():
 async def test_crawler_reads_pages_linked_inside_other_pages():
     requested = []
     pages = {
-        "/": html_page("Zion", '<a href="/servicos">Serviços</a>'),
+        "/": html_page("Zion", '<a href="/servicos">Serviços</a><a href="/blog">Blog</a>'),
         "/blog": '<a href="/blog/artigo">Artigo</a>',
-        "/servicos": html_page("Serviços", '<a href="/servicos/apps">Apps</a>'),
+        "/servicos": html_page(
+            "Serviços", '<a href="/servicos/apps">Apps</a><a href="/blog/artigo">Artigo</a>'
+        ),
         "/servicos/apps": html_page("Aplicativos", '<a href="/">Voltar</a>'),
         "/blog/artigo": html_page("Artigo", '<a href="/servicos/apps">Relacionado</a>'),
     }
@@ -127,13 +131,14 @@ async def test_crawler_reads_pages_linked_inside_other_pages():
         f"{SITE}/",
         f"{SITE}/servicos",
         f"{SITE}/servicos/apps",
-        f"{SITE}/blog/artigo",
     }
     assert requested.count("/servicos/apps") == 1
-    assert next(source for source in sources if source.kind == "blog").title == "Artigo"
+    assert all(source.kind == "website" for source in sources)
+    assert "/blog" not in requested
+    assert "/blog/artigo" not in requested
 
 
-async def test_sitemap_index_discovers_unlinked_articles_and_robots_blocks_pages():
+async def test_sitemap_discovers_pages_but_excludes_blog_and_robots_blocks_pages():
     requested = []
 
     def handler(request):
@@ -151,7 +156,12 @@ async def test_sitemap_index_discovers_unlinked_articles_and_robots_blocks_pages
         if path == "/posts.xml":
             return httpx.Response(
                 200,
-                text=f"<urlset><url><loc>{SITE}/blog/oculto</loc></url><url><loc>{SITE}/bloqueado</loc></url></urlset>",
+                text=(
+                    f"<urlset><url><loc>{SITE}/blog/oculto</loc></url>"
+                    f"<url><loc>{SITE}/es/blog/articulo</loc></url>"
+                    f"<url><loc>{SITE}/sobre</loc></url>"
+                    f"<url><loc>{SITE}/bloqueado</loc></url></urlset>"
+                ),
             )
         return httpx.Response(
             200, text=html_page("Conteúdo"), headers={"content-type": "text/html"}
@@ -164,7 +174,9 @@ async def test_sitemap_index_discovers_unlinked_articles_and_robots_blocks_pages
                 client, Settings(_env_file=None, crawl_delay_seconds=0)
             ).collect()
         ]
-    assert f"{SITE}/blog/oculto" in {source.url for source in sources}
+    assert f"{SITE}/sobre" in {source.url for source in sources}
+    assert "/blog/oculto" not in requested
+    assert "/es/blog/articulo" not in requested
     assert "/bloqueado" not in requested
 
 
@@ -173,7 +185,7 @@ async def test_sitemap_index_discovers_unlinked_articles_and_robots_blocks_pages
     [
         (0, 100, {f"{SITE}/"}),
         (1, 100, {f"{SITE}/", f"{SITE}/a"}),
-        (3, 2, {f"{SITE}/"}),
+        (3, 2, {f"{SITE}/", f"{SITE}/a"}),
     ],
 )
 async def test_crawler_respects_depth_and_page_budget(depth, max_pages, expected):
@@ -213,3 +225,134 @@ async def test_crawler_does_not_follow_external_redirect():
         with pytest.raises(ValueError, match="fora do site"):
             await collector.fetch(SITE)
     assert set(requested) == {"zionsoftwarehouse.com.br"}
+
+
+def wordpress_post(identifier=1):
+    return {
+        "id": identifier,
+        "slug": f"artigo-{identifier}",
+        "link": f"https://cms.zionsoftwarehouse.com.br/artigo-{identifier}/",
+        "title": {"rendered": "GEO &amp; Software"},
+        "content": {
+            "rendered": f"<p>{'Conteúdo útil sobre software. ' * 10}</p><script>Ignorar</script>"
+        },
+        "date_gmt": "2026-09-01T12:00:00",
+        "_embedded": {"wp:featuredmedia": [{"source_url": "https://cms.example/image.jpg"}]},
+    }
+
+
+async def test_wordpress_reads_content_and_metadata_from_api_only():
+    requested = []
+
+    def handler(request):
+        requested.append(request)
+        assert str(request.url).startswith(f"{WORDPRESS_API}/posts?")
+        assert request.url.params["_embed"] == "wp:featuredmedia"
+        assert request.url.params["status"] == "publish"
+        return httpx.Response(200, json=[wordpress_post()], headers={"X-WP-TotalPages": "1"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sources = [
+            source
+            async for source in WordPressCollector(client, Settings(_env_file=None)).collect()
+        ]
+    assert len(requested) == 1
+    source = sources[0]
+    assert source.url == f"{SITE}/blog/artigo-1"
+    assert source.kind == "blog"
+    assert source.title == "GEO & Software"
+    assert "Conteúdo útil" in source.text
+    assert "Ignorar" not in source.text
+    assert "<p>" not in source.text
+    assert source.external_id == "1"
+    assert source.published_at.isoformat() == "2026-09-01T12:00:00+00:00"
+
+
+async def test_wordpress_paginates_and_respects_article_limit():
+    pages = []
+
+    def handler(request):
+        page = int(request.url.params["page"])
+        pages.append(page)
+        assert request.url.params["per_page"] == "100"
+        start = (page - 1) * 100 + 1
+        return httpx.Response(
+            200,
+            json=[wordpress_post(i) for i in range(start, start + 100)],
+            headers={"X-WP-TotalPages": "3"},
+        )
+
+    settings = Settings(_env_file=None, max_blog_articles=101, crawl_delay_seconds=0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sources = [source async for source in WordPressCollector(client, settings).collect()]
+    assert pages == [1, 2]
+    assert len(sources) == 101
+    assert sources[-1].external_id == "101"
+
+
+async def test_wordpress_empty_blog_is_valid():
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[]))
+    ) as client:
+        assert [
+            source
+            async for source in WordPressCollector(client, Settings(_env_file=None)).collect()
+        ] == []
+
+
+async def test_wordpress_failure_propagates_without_scraping_fallback():
+    requested = []
+
+    def handler(request):
+        requested.append(request)
+        return httpx.Response(403)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(httpx.HTTPStatusError):
+            async for _ in WordPressCollector(client, Settings(_env_file=None)).collect():
+                pass
+    assert len(requested) == 1
+    assert requested[0].url.host == "cms.zionsoftwarehouse.com.br"
+
+
+async def test_wordpress_retries_transient_failure(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.collectors.asyncio.sleep", AsyncMock())
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) < 3:
+            return httpx.Response(503)
+        return httpx.Response(200, json=[wordpress_post()])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        sources = [
+            source
+            async for source in WordPressCollector(client, Settings(_env_file=None)).collect()
+        ]
+    assert len(calls) == 3
+    assert len(sources) == 1
+
+
+async def test_wordpress_skips_empty_content_and_requires_list_payload():
+    empty = wordpress_post(1)
+    empty["content"]["rendered"] = ""
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json=[empty, wordpress_post(2)])
+        )
+    ) as client:
+        sources = [
+            source
+            async for source in WordPressCollector(client, Settings(_env_file=None)).collect()
+        ]
+    assert [source.external_id for source in sources] == ["2"]
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={"error": "bad"}))
+    ) as client:
+        with pytest.raises(ValueError, match="Resposta inválida"):
+            async for _ in WordPressCollector(client, Settings(_env_file=None)).collect():
+                pass

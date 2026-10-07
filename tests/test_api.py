@@ -6,7 +6,7 @@ import pytest
 from bson import ObjectId
 
 from app.config import get_settings
-from app.main import app, repository
+from app.main import app, authenticate, repository
 
 
 @pytest.fixture
@@ -174,6 +174,30 @@ def test_swagger_exposes_api_key_authorization():
         "name": "apikey",
         "description": "Informe a API_KEY configurada no .env",
     }
-    for path in schema["paths"].values():
+    for url, path in schema["paths"].items():
         for operation in path.values():
-            assert operation["security"] == [{"APIKeyHeader": []}]
+            if url == "/health":
+                assert "security" not in operation
+            else:
+                assert operation["security"] == [{"APIKeyHeader": []}]
+
+
+@pytest.mark.parametrize("method", ["GET", "HEAD"])
+async def test_health_is_public_and_does_not_access_dependencies(method):
+    def unavailable():
+        raise AssertionError("Health não deve depender de autenticação ou MongoDB")
+
+    app.dependency_overrides[repository] = unavailable
+    app.dependency_overrides[authenticate] = unavailable
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.request(method, "/health")
+        assert response.status_code == 200
+        if method == "GET":
+            assert response.json() == {"status": "ok"}
+        else:
+            assert response.content == b""
+    finally:
+        app.dependency_overrides.clear()

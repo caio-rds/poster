@@ -39,6 +39,7 @@ KNOWN_VALUE_ERRORS = {
     "Nenhuma página com conteúdo útil foi coletada": (
         "Coleta: nenhuma página com conteúdo útil foi coletada"
     ),
+    "Resposta inválida da API WordPress": "Blog Zion: API WordPress retornou formato inválido",
 }
 EDITORIAL_FIELDS = {
     "should_create",
@@ -88,6 +89,7 @@ def http_service(exc: httpx.RequestError | httpx.HTTPStatusError) -> str:
     return {
         "zionsoftwarehouse.com.br": "Site Zion",
         "www.zionsoftwarehouse.com.br": "Site Zion",
+        "cms.zionsoftwarehouse.com.br": "Blog Zion",
         "api.openai.com": "OpenAI",
         "graph.instagram.com": "Instagram",
     }.get(host, "HTTP")

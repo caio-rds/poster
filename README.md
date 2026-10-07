@@ -22,9 +22,27 @@ O FastAPI é servido pelo adaptador WSGI; a coleta trabalha em segundo plano no 
 Passenger, com encerramento junto à aplicação. A API inicia mesmo com MongoDB inacessível;
 nesse caso, responde 503 nas operações de banco e o worker tenta novamente.
 
-`API_KEY` é obrigatória: as três rotas exigem o header `apikey`.
+`API_KEY` é obrigatória: as três rotas de posts exigem o header `apikey`.
 A API recusa iniciar quando a chave não está configurada; chave ausente ou incorreta
 retorna 401. No Swagger `/docs`, use **Authorize** para informar a chave.
+
+## Render
+
+No Web Service, use `pip install -r requirements.txt` como Build Command e
+`uvicorn app.main:app --host 0.0.0.0 --port $PORT` como Start Command.
+Configure as variáveis do `.env.example` em Environment, incluindo `API_KEY`,
+`MONGODB_URI` e `OPENAI_API_KEY` para o worker.
+
+Defina **Health Check Path** como `/health`. `GET /health` retorna HTTP 200 com
+`{"status":"ok"}` sem exigir `apikey` nem consultar MongoDB, OpenAI ou CMS.
+Também aceita `HEAD /health`. É uma verificação de que a API responde;
+não verifica a disponibilidade das dependências nem o funcionamento do worker.
+
+A rota por si só não evita a inatividade. No plano grátis, a Render suspende o serviço
+após 15 minutos sem tráfego de entrada. Configure um monitor HTTP externo para consultar
+`https://SEU-SERVICO.onrender.com/health` a cada 5 minutos, sem headers de autenticação.
+O health check interno da Render não substitui essas requisições externas.
+Consulte a [documentação do plano grátis](https://render.com/docs/free).
 
 ## Docker opcional para desenvolvimento
 
@@ -44,10 +62,11 @@ API e worker usam `MONGODB_URI` do `.env`, inclusive para clusters externos Mong
 O serviço MongoDB local do Compose permanece disponível, mas seus dados não são usados
 quando a URI aponta para Atlas. `MONGODB_DATABASE` define a database de posts nesse cluster.
 
-## As três rotas
+## Rotas
 
 | Método | Rota | Comportamento |
 | --- | --- | --- |
+| GET / HEAD | `/health` | Pública; HTTP 200 indica que a API está respondendo. |
 | GET | `/posts/next` | Marca o post `ready` mais antigo como `posted` e o retorna; HTTP 200 com `null` se a fila estiver vazia. |
 | GET | `/posts` | Lista todos os posts, paginados; filtros `status=ready` ou `status=posted`. |
 | PATCH | `/posts/{id}/status` | Recebe `{"status":"posted"}` e registra a publicação. |
@@ -121,6 +140,9 @@ Exemplo de post retornado:
 O prompt do agente em `app/agent.py` define público, objetivo, estrutura, tom, originalidade
 e limites factuais. A legenda deve ser o texto final, com uma chamada para ação e 3 a 6
 hashtags distintas; o agente valida as hashtags, as fontes e os campos antes de gravar.
+As legendas usam parágrafos curtos separados por uma linha em branco, chamada para ação
+em um bloco próprio e hashtags ao final. O worker também separa automaticamente blocos
+densos por frases e isola as hashtags, preservando listas e quebras já existentes.
 O conteúdo pronto inclui título, legenda de até 2200 caracteres com hashtags, tema, fontes
 e briefing de arte. `image_brief` é uma descrição para produzir a imagem, não um arquivo
 de imagem gerado. Embeddings e hashes ficam internos no MongoDB.
@@ -129,9 +151,9 @@ de imagem gerado. Embeddings e hashes ficam internos no MongoDB.
 
 1. Atualiza os embeddings antigos se `OPENAI_EMBEDDING_MODEL` mudar.
 2. Coleta o histórico do perfil Instagram autenticado e salva suas legendas como `posted`.
-3. Coleta a página institucional, páginas internas e artigos, seguindo links recursivamente
-   e descobrindo URLs nos sitemaps e índices de sitemap, respeitando
-   `robots.txt`. Remove scripts, navegação e rodapés; limita texto por fonte a 24 mil caracteres.
+3. Coleta as páginas institucionais seguindo links e sitemaps, respeitando `robots.txt`.
+   Coleta os artigos pela API REST do WordPress no CMS, sem visitar páginas HTML do blog.
+   Remove scripts, navegação e rodapés; limita texto por fonte a 24 mil caracteres.
 4. Busca os cinco posts mais próximos da fonte e pede ao agente um recorte novo e fundamentado.
 5. Compara o post gerado com todos os posts do mesmo modelo de embedding, inclusive publicados.
    Rejeita similaridade de cosseno a partir de `SIMILARITY_THRESHOLD`; abaixo desse limiar,
@@ -157,7 +179,17 @@ URLs de sitemap também são pontos iniciais da busca. `CRAWL_DELAY_SECONDS` def
 mínimo entre requests (1 segundo), respeitando limites maiores em `robots.txt`.
 Links de paginação `page`, `p` e `offset` são preservados; fragmentos e rastreamento são removidos.
 Links externos, arquivos estáticos e páginas de login/administração são ignorados.
-O coletor lê HTML retornado pelo site; não renderiza JavaScript.
+O coletor lê HTML retornado pelas páginas institucionais; não renderiza JavaScript.
+As URLs do blog são excluídas dessa varredura, inclusive quando aparecem em links e sitemaps.
+Os artigos são coletados diretamente de
+`https://cms.zionsoftwarehouse.com.br/wp-json/wp/v2/posts`, com `_embed=wp:featuredmedia`,
+paginação por `page`/`per_page` e somente posts publicados, do mais recente ao mais antigo.
+`MAX_BLOG_ARTICLES` limita os posts consultados por ciclo, independentemente de `CRAWL_MAX_PAGES`.
+Título e conteúdo vêm de `title.rendered` e `content.rendered`; o HTML é convertido em texto.
+O ID e a data UTC são importados, e a URL pública da fonte segue o formato
+`https://zionsoftwarehouse.com.br/blog/{slug}`. O slug do exemplo `guia-completo-geo-2026`
+é coletado junto com os demais posts, sem fixar a coleta em um único artigo.
+Falhas da API são propagadas para nova tentativa do worker; não há retorno à varredura do blog.
 
 No cPanel, o worker acompanha a vida do processo Passenger. Consulte o guia de implantação
 para a opção de cron caso a hospedagem encerre processos ociosos.
@@ -215,7 +247,8 @@ uv run ruff format --check app tests passenger_wsgi.py worker_job.py
 
 Os testes isolam MongoDB, OpenAI e HTTP usando mocks. Cobrem contratos das rotas, autenticação,
 paginação, idempotência, rejeição de duplicatas, recuperação de falhas, perda de lock,
-extração de HTML, robots.txt, paginação Instagram e validação das respostas do agente.
+extração de HTML, robots.txt, coleta e paginação WordPress, paginação Instagram e validação
+das respostas do agente.
 Eles não substituem um teste integrado com MongoDB e credenciais reais.
 
 ## Referências da integração
