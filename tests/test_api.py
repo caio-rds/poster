@@ -115,6 +115,36 @@ async def test_list_returns_featured_image_without_changing_status(api, document
     repo.mark_posted.assert_not_awaited()
 
 
+@pytest.mark.parametrize("route", ["/posts", "/posts/next", "/posts/{id}/status"])
+async def test_api_removes_emojis_from_legacy_text_fields(api, document, route):
+    client, repo = api
+    document.update({
+        "title": "\U0001f680 Software sob medida",
+        "caption": (
+            "\U0001f469\u200d\U0001f4bb Inovação para sua empresa. "
+            "\U0001f44d\U0001f3fd #Zion"
+        ),
+        "topic": "\U0001f4bb Tecnologia",
+        "image_brief": "\u2728 Arte",
+    })
+    repo.list_posts.return_value = ([document], 1)
+    repo.next_post.return_value = document
+    repo.mark_posted.return_value = document
+    if "{id}" in route:
+        response = await client.patch(
+            route.replace("{id}", str(document["_id"])), json={"status": "posted"}
+        )
+    else:
+        response = await client.get(route)
+    assert response.status_code == 200
+    item = response.json()["items"][0] if route == "/posts" else response.json()
+    assert item["title"] == "Software sob medida"
+    assert item["caption"] == "Inovação para sua empresa."
+    assert item["topic"] == "Tecnologia"
+    assert item["image_brief"] == "Arte"
+    assert "hashtags" not in item
+
+
 @pytest.mark.parametrize("image", [None, ""])
 async def test_legacy_posts_without_image_still_return(api, document, image):
     client, repo = api

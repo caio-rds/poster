@@ -143,6 +143,9 @@ hashtags; o agente valida as fontes e os campos antes de gravar.
 As legendas usam parágrafos curtos separados por uma linha em branco, chamada para ação
 em um bloco próprio. O worker também separa automaticamente blocos
 densos por frases, preservando listas e quebras já existentes.
+Os textos não incluem emojis: título, legenda, tema e briefing antigo são limpos na
+validação do modelo, tanto na geração quanto nas respostas da API. Acentos, links e listas
+de texto são preservados.
 O campo `hashtags` não é gerado nem retornado pela API. As hashtags também são removidas
 da legenda ao gerar novos posts e ao retornar posts antigos, sem modificar o histórico salvo.
 O conteúdo pronto inclui título, legenda de até 2200 caracteres sem hashtags, tema, fontes

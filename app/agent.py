@@ -6,7 +6,7 @@ from pydantic import Field, create_model
 
 from app.config import Settings
 from app.models import Draft, DuplicateDecision, Generation, Source
-from app.text import remove_hashtags
+from app.text import remove_emojis, remove_hashtags
 
 INSTRUCTIONS = """
 PAPEL E OBJETIVO
@@ -26,7 +26,8 @@ ENTREGA OBRIGATÓRIA
   Quando houver uma lista de benefícios ou dicas, use linhas iniciadas por •.
   Encerre com UMA chamada para ação coerente em um parágrafo próprio, como conversar
   com a Zion ou ler o artigo de origem. Não inclua hashtags em nenhum trecho da legenda.
-  Use texto simples: sem Markdown, HTML ou letras Unicode simulando negrito.
+  Use texto simples: sem emojis, Markdown, HTML ou letras Unicode simulando negrito.
+  Não use emojis no título, na legenda ou no tema.
   Evite blocos densos; prefira uma legenda entre 600 e 1400 caracteres quando a fonte
   permitir, sem alongar artificialmente conteúdos simples.
   Toda a legenda deve ter no máximo 2200 caracteres.
@@ -60,7 +61,7 @@ def embedding_text(post: Draft) -> str:
 
 def format_caption(caption: str) -> str:
     """Preserva linhas e listas e dá respiro a blocos densos, sem hashtags."""
-    body = remove_hashtags(caption)
+    body = remove_hashtags(remove_emojis(caption))
     paragraphs = []
     for paragraph in re.split(r"\n\s*\n", body):
         paragraph = paragraph.strip()

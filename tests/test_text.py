@@ -1,6 +1,8 @@
 import pytest
+from pydantic import ValidationError
 
-from app.text import remove_hashtags
+from app.models import Draft
+from app.text import remove_emojis, remove_hashtags
 
 
 @pytest.mark.parametrize(
@@ -16,3 +18,44 @@ from app.text import remove_hashtags
 )
 def test_removes_hashtags_and_preserves_text_urls_and_lists(original, expected):
     assert remove_hashtags(original) == expected
+
+
+@pytest.mark.parametrize(
+    "original,expected",
+    [
+        ("\U0001f680 Software sob medida \U0001f4bb", "Software sob medida"),
+        ("\U0001f469\u200d\U0001f4bb Tecnologia \U0001f1e7\U0001f1f7", "Tecnologia"),
+        ("\U0001f44d\U0001f3fd Ação e inovação \u2764\ufe0f", "Ação e inovação"),
+        ("1\ufe0f\u20e3 Primeiro item", "Primeiro item"),
+        ("C# e C++: programação", "C# e C++: programação"),
+        ("• Segurança\n• Desempenho", "• Segurança\n• Desempenho"),
+        ("Software\U0001f680rápido", "Software rápido"),
+    ],
+)
+def test_removes_emoji_sequences_without_damaging_text(original, expected):
+    assert remove_emojis(original) == expected
+
+
+def test_generated_draft_is_saved_without_emojis():
+    draft = Draft(
+        title="\U0001f680 Software",
+        caption="Inovação \U0001f4bb para sua empresa.",
+        topic="\U0001f1e7\U0001f1f7 Tecnologia",
+        source_urls=["https://site.test/blog/artigo"],
+    )
+    assert draft.title == "Software"
+    assert draft.caption == "Inovação para sua empresa."
+    assert draft.topic == "Tecnologia"
+
+
+@pytest.mark.parametrize("field", ["title", "caption", "topic"])
+def test_emoji_only_required_field_cannot_become_empty_post(field):
+    values = {
+        "title": "Software",
+        "caption": "Inovação para sua empresa.",
+        "topic": "Tecnologia",
+        "source_urls": ["https://site.test/blog/artigo"],
+    }
+    values[field] = "\U0001f680"
+    with pytest.raises(ValidationError):
+        Draft(**values)

@@ -2,7 +2,9 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.text import remove_emojis
 
 
 class PostStatus(StrEnum):
@@ -15,6 +17,11 @@ class Draft(BaseModel):
     caption: str = Field(min_length=1, max_length=2200)
     topic: str = Field(min_length=1, max_length=300)
     source_urls: list[str] = Field(min_length=1)
+
+    @field_validator("title", "caption", "topic", mode="before")
+    @classmethod
+    def clean_text(cls, value):
+        return remove_emojis(value) if isinstance(value, str) else value
 
 
 class Generation(BaseModel):
@@ -49,6 +56,11 @@ class PostOut(Draft):
     updated_at: datetime
     posted_at: datetime | None = None
     origin: str
+
+    @field_validator("image_brief", mode="before")
+    @classmethod
+    def clean_legacy_brief(cls, value):
+        return remove_emojis(value) if isinstance(value, str) else value
 
 
 class PostPage(BaseModel):
