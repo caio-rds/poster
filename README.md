@@ -124,7 +124,7 @@ Exemplo de post retornado:
 {
   "id": "507f1f77bcf86cd799439011",
   "title": "Sua empresa precisa de software sob medida?",
-  "caption": "Uma legenda completa, com chamada para ação.",
+  "caption": "Sua empresa precisa de software sob medida?\n\nUma legenda curta, com chamada para ação.",
   "image_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.jpg",
   "image_brief": null,
   "topic": "Quando adotar software sob medida",
@@ -148,7 +148,12 @@ validação do modelo, tanto na geração quanto nas respostas da API. Acentos, 
 de texto são preservados.
 O campo `hashtags` não é gerado nem retornado pela API. As hashtags também são removidas
 da legenda ao gerar novos posts e ao retornar posts antigos, sem modificar o histórico salvo.
-O conteúdo pronto inclui título, legenda de até 2200 caracteres sem hashtags, tema, fontes
+Na Zapier, use apenas `caption` no campo de texto da publicação: ele já inclui o título,
+uma linha em branco e a legenda, com no máximo 700 caracteres no total. Não concatene
+`title` novamente. Posts antigos são encurtados na resposta sem alterar o conteúdo salvo,
+priorizando frases completas e a chamada final quando ela cabe no limite.
+Novas gerações usam títulos de até 100 caracteres e legendas de até 500 caracteres.
+O conteúdo pronto inclui título, texto curto de publicação sem hashtags, tema, fontes
 e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
 diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem

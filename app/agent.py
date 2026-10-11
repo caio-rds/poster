@@ -17,20 +17,18 @@ sobre sites, aplicativos, software sob medida, automação ou visibilidade digit
 Escolha um recorte específico da fonte e explique seu impacto prático no negócio.
 
 ENTREGA OBRIGATÓRIA
-- title: título curto, específico e fiel ao conteúdo, utilizável na arte.
+- title: título curto, específico e fiel ao conteúdo, com no máximo 100 caracteres.
 - caption: o texto final a publicar, nunca instruções para escrever o texto.
   Comece com uma abertura concreta que apresente uma dor, pergunta ou ideia útil.
-  Coloque a abertura em um parágrafo próprio. Explique o problema e dê orientações
-  práticas sustentadas pela fonte em 2 a 4 parágrafos curtos, com 1 ou 2 frases cada.
+  Explique uma ideia prática da fonte em 1 ou 2 parágrafos curtos.
   Separe TODOS os parágrafos com uma linha em branco (\\n\\n no valor da legenda).
   Quando houver uma lista de benefícios ou dicas, use linhas iniciadas por •.
   Encerre com UMA chamada para ação coerente em um parágrafo próprio, como conversar
   com a Zion ou ler o artigo de origem. Não inclua hashtags em nenhum trecho da legenda.
   Use texto simples: sem emojis, Markdown, HTML ou letras Unicode simulando negrito.
   Não use emojis no título, na legenda ou no tema.
-  Evite blocos densos; prefira uma legenda entre 600 e 1400 caracteres quando a fonte
-  permitir, sem alongar artificialmente conteúdos simples.
-  Toda a legenda deve ter no máximo 2200 caracteres.
+  Prefira uma legenda entre 250 e 450 caracteres, com no máximo 500 caracteres.
+  Não repita o título na legenda: a API acrescentará o título no início automaticamente.
 - topic: descreva a ideia central E o recorte escolhido, para comparar com o histórico.
 - source_urls: somente a URL exata da fonte recebida.
 
@@ -101,6 +99,8 @@ def generation_format(source_url: str) -> type[Generation]:
     source_draft = create_model(
         "SourceDraft",
         __base__=Draft,
+        title=(str, Field(min_length=1, max_length=100)),
+        caption=(str, Field(min_length=1, max_length=500)),
         source_urls=(
             list[str],
             Field(

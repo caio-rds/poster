@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.text import remove_emojis
+from app.text import POST_TEXT_LIMIT, remove_emojis
 
 
 class PostStatus(StrEnum):
@@ -47,6 +47,7 @@ class Source(BaseModel):
 
 
 class PostOut(Draft):
+    caption: str = Field(min_length=1, max_length=POST_TEXT_LIMIT)
     image_url: str | None = None
     # Compatibilidade com posts antigos; novos posts usam a imagem da fonte.
     image_brief: str | None = None

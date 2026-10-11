@@ -94,7 +94,7 @@ async def test_api_removes_legacy_hashtags_from_all_post_responses(api, document
         response = await client.get(route)
     assert response.status_code == 200
     item = response.json()["items"][0] if route == "/posts" else response.json()
-    assert item["caption"] == "Legenda com C# e https://site.test/#secao."
+    assert item["caption"] == "Software sob medida\n\nLegenda com C# e https://site.test/#secao."
     assert "hashtags" not in item
     assert document["hashtags"] == ["#Zion", "#Software"]
 
@@ -113,6 +113,29 @@ async def test_list_returns_featured_image_without_changing_status(api, document
     assert item["posted_at"] is None
     repo.next_post.assert_not_awaited()
     repo.mark_posted.assert_not_awaited()
+
+
+@pytest.mark.parametrize("route", ["/posts", "/posts/next", "/posts/{id}/status"])
+async def test_api_returns_short_publication_with_title_in_caption(api, document, route):
+    client, repo = api
+    document["caption"] = (
+        "Software próprio permite que sua empresa evolua com autonomia. " * 20
+        + "\n\nConverse com a Zion."
+    )
+    repo.list_posts.return_value = ([document], 1)
+    repo.next_post.return_value = document
+    repo.mark_posted.return_value = document
+    if "{id}" in route:
+        response = await client.patch(
+            route.replace("{id}", str(document["_id"])), json={"status": "posted"}
+        )
+    else:
+        response = await client.get(route)
+    assert response.status_code == 200
+    item = response.json()["items"][0] if route == "/posts" else response.json()
+    assert item["caption"].startswith(item["title"] + "\n\n")
+    assert len(item["caption"]) <= 700
+    assert item["caption"].endswith("Converse com a Zion.")
 
 
 @pytest.mark.parametrize("route", ["/posts", "/posts/next", "/posts/{id}/status"])
@@ -139,7 +162,7 @@ async def test_api_removes_emojis_from_legacy_text_fields(api, document, route):
     assert response.status_code == 200
     item = response.json()["items"][0] if route == "/posts" else response.json()
     assert item["title"] == "Software sob medida"
-    assert item["caption"] == "Inovação para sua empresa."
+    assert item["caption"] == "Software sob medida\n\nInovação para sua empresa."
     assert item["topic"] == "Tecnologia"
     assert item["image_brief"] == "Arte"
     assert "hashtags" not in item

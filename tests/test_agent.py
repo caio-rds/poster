@@ -186,6 +186,8 @@ async def test_generation_schema_requires_exact_translated_source(agent):
     assert urls["items"]["enum"] == [url]
     assert urls["minItems"] == urls["maxItems"] == 1
     assert "hashtags" not in schema["$defs"]["SourceDraft"]["properties"]
+    assert schema["$defs"]["SourceDraft"]["properties"]["title"]["maxLength"] == 100
+    assert schema["$defs"]["SourceDraft"]["properties"]["caption"]["maxLength"] == 500
 
 
 def test_generation_schema_does_not_reuse_another_source_url():

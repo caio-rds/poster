@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.models import Draft
-from app.text import remove_emojis, remove_hashtags
+from app.text import POST_TEXT_LIMIT, publication_text, remove_emojis, remove_hashtags
 
 
 @pytest.mark.parametrize(
@@ -59,3 +59,26 @@ def test_emoji_only_required_field_cannot_become_empty_post(field):
     values[field] = "\U0001f680"
     with pytest.raises(ValidationError):
         Draft(**values)
+
+
+def test_publication_text_includes_title_once_and_preserves_short_caption():
+    text = publication_text("Software sob medida", "Soluções para seu negócio.")
+    assert text == "Software sob medida\n\nSoluções para seu negócio."
+    assert publication_text("Software sob medida", text) == text
+
+
+def test_long_publication_text_keeps_complete_sentences_and_final_cta():
+    title = "Seu site pode evoluir"
+    sentence = "Documentação e código próprio dão autonomia à sua empresa."
+    body = " ".join([sentence] * 25) + "\n\nConverse com a Zion."
+    text = publication_text(title, body)
+    assert len(text) <= POST_TEXT_LIMIT
+    assert text.startswith(title + "\n\n" + sentence)
+    assert text.endswith("\n\nConverse com a Zion.")
+    assert publication_text(title, text) == text
+
+
+def test_very_long_sentence_is_shortened_on_word_boundary():
+    text = publication_text("Título", "palavra " * 500)
+    assert len(text) <= POST_TEXT_LIMIT
+    assert text.endswith("palavra...")
