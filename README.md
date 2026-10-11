@@ -174,9 +174,9 @@ sem enviar `apikey`. Essas rotas apenas leem a imagem e não alteram o post. O s
 baixa somente imagens dos domínios da Zion, converte WebP/PNG para JPEG, remove metadados
 e limita o maior lado a 1440 pixels. Uma falha no CMS retorna HTTP 502; a conversão
 não elimina indisponibilidade ou bloqueios de rede no servidor de origem.
-Se a conexão HTTPS do CMS falhar, o download tenta HTTP somente para arquivos públicos
-em `cms.zionsoftwarehouse.com.br/wp-content/uploads/`, sem credenciais. O link entregue
-ao Zapier continua usando HTTPS da API. JPEGs baixados com sucesso ficam na coleção
+O download usa `curl-cffi` com perfil de conexão Chrome, pois o CMS encerra conexões
+do cliente HTTP padrão. A conexão mantém HTTPS e validação de certificado, incluindo
+os redirecionamentos. JPEGs baixados com sucesso ficam na coleção
 `post_images` do MongoDB, separados dos posts; downloads seguintes usam essa cópia,
 inclusive após reiniciar a Render. Falhas de download não são armazenadas no cache.
 Novos posts exigem briefing; posts antigos mantêm seus briefings salvos e só retornam `null`

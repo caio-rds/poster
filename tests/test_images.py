@@ -1,15 +1,50 @@
+from contextlib import asynccontextmanager
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from bson import ObjectId
+from curl_cffi.requests import RequestsError
 from fastapi import HTTPException
 from PIL import Image
 
 from app.images import download_jpeg, jpeg_bytes, validate_image_url
 from app.main import app, repository
 from app.repository import PostRepository, digest
+
+
+def mock_browser(monkeypatch, handler):
+    class Session:
+        def __init__(self, **kwargs):
+            assert kwargs["impersonate"] == "chrome"
+            assert "verify" not in kwargs  # Certificate verification stays enabled.
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        @asynccontextmanager
+        async def stream(self, method, url, **kwargs):
+            assert kwargs["allow_redirects"] is False
+            response = handler(httpx.Request(method, url))
+
+            async def chunks():
+                yield response.content
+
+            def raise_for_status():
+                if response.status_code >= 400:
+                    raise RequestsError(f"HTTP {response.status_code}")
+
+            yield SimpleNamespace(
+                status_code=response.status_code, headers=response.headers,
+                aiter_content=chunks, raise_for_status=raise_for_status,
+            )
+
+    monkeypatch.setattr("app.images.AsyncSession", Session)
 
 
 def webp():
@@ -43,48 +78,42 @@ def test_rejects_untrusted_images(url):
 
 
 async def test_downloader_converts_blog_image(monkeypatch):
-    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=webp()))
-    monkeypatch.setattr("app.images.httpx.AsyncHTTPTransport", lambda **kwargs: transport)
+    mock_browser(monkeypatch, lambda request: httpx.Response(200, content=webp()))
     content = await download_jpeg("https://cms.zionsoftwarehouse.com.br/a.webp")
     assert content.startswith(b"\xff\xd8")
 
 
-async def test_cms_tls_failure_falls_back_to_public_http_asset(monkeypatch):
+async def test_browser_profile_downloads_over_https(monkeypatch):
     requests = []
 
     def handler(request):
         requests.append(str(request.url))
-        if request.url.scheme == "https":
-            raise httpx.ConnectError("TLS connection reset", request=request)
         assert "authorization" not in request.headers
         return httpx.Response(200, content=webp())
 
-    monkeypatch.setattr(
-        "app.images.httpx.AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handler)
-    )
+    mock_browser(monkeypatch, handler)
     content = await download_jpeg(
         "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/image.webp"
     )
     assert content.startswith(b"\xff\xd8")
     assert requests == [
         "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/image.webp",
-        "http://cms.zionsoftwarehouse.com.br/wp-content/uploads/image.webp",
     ]
 
 
-async def test_non_asset_tls_failure_never_downgrades(monkeypatch):
+async def test_connection_failure_never_downgrades(monkeypatch):
     requests = []
 
     def handler(request):
         requests.append(request)
-        raise httpx.ConnectError("TLS connection reset", request=request)
+        raise RequestsError("TLS connection reset")
 
-    monkeypatch.setattr(
-        "app.images.httpx.AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handler)
-    )
-    with pytest.raises(HTTPException):
-        await download_jpeg("https://cms.zionsoftwarehouse.com.br/wp-json/wp/v2/posts")
+    mock_browser(monkeypatch, handler)
+    with pytest.raises(HTTPException) as error:
+        await download_jpeg("https://cms.zionsoftwarehouse.com.br/wp-content/uploads/image.webp")
+    assert error.value.status_code == 502
     assert len(requests) == 1
+    assert requests[0].url.scheme == "https"
 
 
 async def test_public_image_serves_persistent_cache_without_cms(monkeypatch):
@@ -134,9 +163,7 @@ async def test_redirect_to_private_host_is_not_requested(monkeypatch):
         requests.append(request)
         return httpx.Response(302, headers={"location": "https://localhost/private"})
 
-    monkeypatch.setattr(
-        "app.images.httpx.AsyncHTTPTransport", lambda **kwargs: httpx.MockTransport(handler)
-    )
+    mock_browser(monkeypatch, handler)
     with pytest.raises(HTTPException):
         await download_jpeg("https://cms.zionsoftwarehouse.com.br/a.webp")
     assert len(requests) == 1
