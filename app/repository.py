@@ -7,6 +7,7 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from app.config import get_settings
 from app.models import PostOut
 
 
@@ -22,7 +23,13 @@ def cosine(left: list[float], right: list[float]) -> float:
 
 
 def public_post(document: dict) -> PostOut:
-    return PostOut.model_validate({**document, "id": str(document["_id"])})
+    return PostOut.model_validate(
+        {
+            **document,
+            "id": str(document["_id"]),
+            "image_url": document.get("image_url") or get_settings().default_post_image_url,
+        }
+    )
 
 
 class PostRepository:

@@ -148,14 +148,18 @@ O conteúdo pronto inclui título, legenda de até 2200 caracteres com hashtags,
 e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
 diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem
-`image_url`; sem imagem destacada válida, o valor é `null`.
+`image_url`; sem imagem destacada válida, usa a imagem institucional definida em
+`DEFAULT_POST_IMAGE_URL` (padrão: `https://zionsoftwarehouse.com.br/og-image.webp`).
+O fallback também é aplicado na leitura de posts antigos que ainda não têm imagem salva.
 `image_brief` permanece na resposta por compatibilidade com posts antigos; novos posts
 retornam `null`. Embeddings e hashes ficam internos no MongoDB.
 
 A cada coleta, o worker também sincroniza a imagem dos posts existentes que citam a mesma
-URL de artigo, inclusive fontes já processadas. Essa sincronização não altera status,
+URL de artigo, inclusive fontes já processadas e URLs antigas em inglês/espanhol,
+mesmo quando foram cadastradas como `website`. Essa sincronização não altera status,
 legenda, `posted_at` ou `updated_at`, nem gera posts novamente. Artigos fora do limite de
 `MAX_BLOG_ARTICLES` só terão suas imagens sincronizadas quando forem coletados.
+Uma resposta do CMS sem imagem não apaga uma URL já salva.
 
 ## Worker e deduplicação
 

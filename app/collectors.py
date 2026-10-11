@@ -100,6 +100,42 @@ def is_blog_url(url: str) -> bool:
     return "blog" in urlsplit(url).path.lower().split("/")
 
 
+# URLs traduzidas usadas antes da migração do blog para o CMS.
+LEGACY_BLOG_SLUGS = {
+    (
+        "the-secret-to-top-rankings-how-optimized-website-and-landing-page-design-"
+        "guarantees-your-google-ranking"
+    ): (
+        "o-segredo-dos-primeiros-lugares-como-a-criacao-de-sites-e-landing-pages-otimizadas-"
+        "garante-seu-ranqueamento-no-google"
+    ),
+    "myths-and-truths-about-website-security-why-ongoing-maintenance-is-your-best-defense": (
+        "mitos-e-verdades-sobre-a-seguranca-de-sites-por-que-a-manutencao-continua-e-a-sua-melhor-defesa"
+    ),
+    "como-elegir-una-agencia-de-desarrollo-de-sitios-web": (
+        "como-escolher-uma-agencia-de-desenvolvimento-de-sites"
+    ),
+    "desarrollo-de-aplicaciones-cuando-el-sitio-web-no-es-suficiente-para-tu-estrategia-digital": (
+        "desenvolvimento-de-aplicativos-quando-o-site-nao-e-suficiente-para-a-sua-estrategia-digital"
+    ),
+}
+
+
+def blog_source_urls(url: str) -> list[str]:
+    """Permalinks do mesmo artigo, incluindo URLs antigas de idiomas."""
+    if not is_site_url(url) or not is_blog_url(url):
+        return []
+    slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    canonical = LEGACY_BLOG_SLUGS.get(slug, slug)
+    slugs = [canonical, *[key for key, value in LEGACY_BLOG_SLUGS.items() if value == canonical]]
+    urls = []
+    for item in slugs:
+        for prefix in ("", "/en-US", "/es"):
+            candidate = f"{SITE}{prefix}/blog/{item}"
+            urls.extend([candidate, candidate + "/"])
+    return urls
+
+
 def extract_source(html: str, url: str, kind: str) -> Source:
     soup = BeautifulSoup(html, "html.parser")
     for node in soup.select("script, style, nav, footer, header, noscript, svg, form"):

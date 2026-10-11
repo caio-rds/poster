@@ -6,6 +6,7 @@ import pytest
 from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
+from app.collectors import blog_source_urls
 from app.config import Settings
 from app.models import Draft, DuplicateDecision, Generation, Source
 from app.repository import PostRepository, cosine, digest
@@ -84,8 +85,7 @@ async def test_processed_blog_updates_image_only_without_regenerating(pipeline, 
     await pipeline.process(source)
     pipeline.db.posts.update_many.assert_awaited_once_with(
         {
-            "origin": "blog",
-            "source_urls": source.url,
+            "source_urls": {"$in": blog_source_urls(source.url)},
             "image_url": {"$ne": source.image_url},
         },
         {"$set": {"image_url": source.image_url}},
@@ -93,6 +93,20 @@ async def test_processed_blog_updates_image_only_without_regenerating(pipeline, 
     pipeline.agent.generate.assert_not_awaited()
     pipeline.agent.embed.assert_not_awaited()
     pipeline.repo.insert.assert_not_awaited()
+
+
+async def test_missing_wordpress_image_does_not_erase_existing_image(pipeline, source):
+    pipeline.db.sources.find_one.return_value = {"outcome": "created"}
+    await pipeline.process(source)
+    pipeline.db.posts.update_many.assert_not_awaited()
+
+
+async def test_post_without_featured_image_saves_institutional_fallback(pipeline, source):
+    pipeline.settings.default_post_image_url = "https://cms.example/institutional.jpg"
+    await pipeline.process(source)
+    document = pipeline.repo.insert.call_args.args[0]
+    assert document["image_url"] == "https://cms.example/institutional.jpg"
+    assert document["status"] == "ready"
 
 
 async def test_recovers_insert_before_source_record(pipeline, source):

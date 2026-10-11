@@ -94,14 +94,26 @@ async def test_list_returns_featured_image_without_changing_status(api, document
     repo.mark_posted.assert_not_awaited()
 
 
-async def test_legacy_posts_without_image_still_return(api, document):
+@pytest.mark.parametrize("image", [None, ""])
+async def test_legacy_posts_without_image_still_return(api, document, image):
     client, repo = api
+    if image is not None:
+        document["image_url"] = image
     repo.list_posts.return_value = ([document], 1)
     response = await client.get("/posts")
     assert response.status_code == 200
     item = response.json()["items"][0]
-    assert item["image_url"] is None
+    assert item["image_url"] == "https://zionsoftwarehouse.com.br/og-image.webp"
     assert item["image_brief"] == document["image_brief"]
+
+
+async def test_image_fallback_can_be_configured(api, document, monkeypatch):
+    monkeypatch.setenv("DEFAULT_POST_IMAGE_URL", "https://cms.example/institutional.jpg")
+    get_settings.cache_clear()
+    client, repo = api
+    repo.list_posts.return_value = ([document], 1)
+    response = await client.get("/posts")
+    assert response.json()["items"][0]["image_url"] == "https://cms.example/institutional.jpg"
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "status=invalid"])

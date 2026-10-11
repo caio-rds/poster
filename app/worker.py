@@ -10,7 +10,13 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from app.agent import EditorialAgent, embedding_text
-from app.collectors import USER_AGENT, InstagramCollector, WebsiteCollector, WordPressCollector
+from app.collectors import (
+    USER_AGENT,
+    InstagramCollector,
+    WebsiteCollector,
+    WordPressCollector,
+    blog_source_urls,
+)
 from app.config import Settings, get_settings
 from app.database import create_client, ensure_indexes
 from app.errors import failure_hint
@@ -55,12 +61,11 @@ class Pipeline:
             )
 
     async def process(self, source: Source):
-        if source.kind == "blog":
+        if source.kind == "blog" and source.image_url:
             # Atualiza também posts antigos sem regenerar legendas ou alterar status/datas.
             await self.db.posts.update_many(
                 {
-                    "origin": "blog",
-                    "source_urls": source.url,
+                    "source_urls": {"$in": blog_source_urls(source.url)},
                     "image_url": {"$ne": source.image_url},
                 },
                 {"$set": {"image_url": source.image_url}},
@@ -110,7 +115,7 @@ class Pipeline:
         now = datetime.now(UTC)
         document = {
             **post.model_dump(),
-            "image_url": source.image_url,
+            "image_url": source.image_url or self.settings.default_post_image_url,
             "status": status,
             "origin": source.kind,
             "created_at": now,

@@ -8,6 +8,7 @@ from app.collectors import (
     WebsiteCollector,
     WordPressCollector,
     article_links,
+    blog_source_urls,
     extract_source,
     featured_image_url,
     internal_links,
@@ -22,6 +23,14 @@ def test_article_links_are_canonical_unique_and_same_domain():
     assert article_links(html, "https://zionsoftwarehouse.com.br/blog") == [
         "https://zionsoftwarehouse.com.br/blog/test"
     ]
+
+
+def test_blog_images_match_legacy_language_urls():
+    urls = blog_source_urls(f"{SITE}/blog/como-escolher-uma-agencia-de-desenvolvimento-de-sites")
+    assert f"{SITE}/es/blog/como-elegir-una-agencia-de-desarrollo-de-sitios-web" in urls
+    assert f"{SITE}/blog/como-escolher-uma-agencia-de-desenvolvimento-de-sites" in urls
+    assert blog_source_urls(f"{SITE}/sobre") == []
+    assert blog_source_urls("https://evil.example/blog/artigo") == []
 
 
 def test_extract_content_removes_navigation_and_scripts():

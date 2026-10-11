@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     crawl_max_depth: int = Field(default=3, ge=0, le=10)
     crawl_delay_seconds: float = Field(default=1, ge=0, le=60)
     max_blog_articles: int = Field(default=30, ge=1, le=200)
+    default_post_image_url: str | None = Field(
+        default="https://zionsoftwarehouse.com.br/og-image.webp", pattern=r"^https?://"
+    )
     similarity_threshold: float = Field(default=0.86, ge=0, le=1)
     instagram_access_token: SecretStr = SecretStr("")
     instagram_user_id: str = ""
