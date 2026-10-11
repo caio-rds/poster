@@ -6,6 +6,7 @@ from pydantic import Field, create_model
 
 from app.config import Settings
 from app.models import Draft, DuplicateDecision, Generation, Source
+from app.text import remove_hashtags
 
 INSTRUCTIONS = """
 PAPEL E OBJETIVO
@@ -24,13 +25,11 @@ ENTREGA OBRIGATÓRIA
   Separe TODOS os parágrafos com uma linha em branco (\\n\\n no valor da legenda).
   Quando houver uma lista de benefícios ou dicas, use linhas iniciadas por •.
   Encerre com UMA chamada para ação coerente em um parágrafo próprio, como conversar
-  com a Zion ou ler o artigo de origem. Inclua entre 3 e 6 hashtags relevantes em um
-  último bloco separado por linha em branco, com um espaço entre as hashtags.
+  com a Zion ou ler o artigo de origem. Não inclua hashtags em nenhum trecho da legenda.
   Use texto simples: sem Markdown, HTML ou letras Unicode simulando negrito.
   Evite blocos densos; prefira uma legenda entre 600 e 1400 caracteres quando a fonte
   permitir, sem alongar artificialmente conteúdos simples.
-  Toda a legenda, incluindo hashtags, deve ter no máximo 2200 caracteres.
-- hashtags: as mesmas hashtags da legenda, cada uma começando com #, sem espaços.
+  Toda a legenda deve ter no máximo 2200 caracteres.
 - topic: descreva a ideia central E o recorte escolhido, para comparar com o histórico.
 - source_urls: somente a URL exata da fonte recebida.
 
@@ -59,10 +58,9 @@ def embedding_text(post: Draft) -> str:
     return f"{post.topic}\n{post.title}\n{post.caption}"
 
 
-def format_caption(caption: str, hashtags: list[str]) -> str:
-    """Preserva linhas e listas; dá respiro a blocos densos e separa hashtags finais."""
-    caption = caption.replace("\r\n", "\n").replace("\r", "\n").strip()
-    body = re.sub(r"(?:\s*#\w+)+\s*$", "", caption).rstrip()
+def format_caption(caption: str) -> str:
+    """Preserva linhas e listas e dá respiro a blocos densos, sem hashtags."""
+    body = remove_hashtags(caption)
     paragraphs = []
     for paragraph in re.split(r"\n\s*\n", body):
         paragraph = paragraph.strip()
@@ -81,7 +79,7 @@ def format_caption(caption: str, hashtags: list[str]) -> str:
             else:
                 block += " " + sentence
         paragraphs.append(block)
-    return "\n\n".join([*paragraphs, " ".join(hashtags)])
+    return "\n\n".join(paragraphs)
 
 
 def candidate_context(nearest: list) -> list[dict]:
@@ -102,7 +100,6 @@ def generation_format(source_url: str) -> type[Generation]:
     source_draft = create_model(
         "SourceDraft",
         __base__=Draft,
-        hashtags=(list[str], Field(min_length=3, max_length=6)),
         source_urls=(
             list[str],
             Field(
@@ -156,20 +153,13 @@ class EditorialAgent:
             raise ValueError("Post gerado contém fonte não fornecida")
         if result.should_create:
             post = result.post
-            if not 3 <= len(post.hashtags) <= 6 or len(set(post.hashtags)) != len(post.hashtags):
-                raise ValueError("Post deve conter entre 3 e 6 hashtags distintas")
-            if any(
-                not tag.startswith("#") or not tag[1:].isalnum() or tag not in post.caption
-                for tag in post.hashtags
-            ):
-                raise ValueError("Hashtags inválidas ou ausentes na legenda")
             if any(not value.strip() for value in (post.title, post.caption, post.topic)):
                 raise ValueError("Post contém campos vazios")
             if "```" in post.caption:
                 raise ValueError("Legenda deve ser texto pronto para publicação")
             # Revalida o limite depois de inserir as quebras, sem truncar o conteúdo.
             result.post = type(post).model_validate(
-                {**post.model_dump(), "caption": format_caption(post.caption, post.hashtags)}
+                {**post.model_dump(), "caption": format_caption(post.caption)}
             )
         return result
 

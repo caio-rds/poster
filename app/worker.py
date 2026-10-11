@@ -91,7 +91,6 @@ class Pipeline:
             post = Draft(
                 title=source.title,
                 caption=source.text,
-                hashtags=[],
                 topic=source.title,
                 source_urls=[source.url],
             )

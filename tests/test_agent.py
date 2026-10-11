@@ -76,15 +76,14 @@ def test_worker_requires_openai_key():
 
 
 @pytest.mark.parametrize(
-    "hashtags,caption",
+    "caption",
     [
-        (["#Zion"], "Texto #Zion"),
-        (["#Zion", "#Sites", "#Software"], "Texto sem hashtags"),
-        (["Zion", "#Sites", "#Software"], "Texto Zion #Sites #Software"),
-        (["#Zion", "#Zion", "#Software"], "Texto #Zion #Software"),
+        "Texto #Zion",
+        "Texto sem hashtags",
+        "Texto #Zion #Sites #Software",
     ],
 )
-async def test_generated_hashtags_are_validated(agent, hashtags, caption):
+async def test_generation_removes_hashtags(agent, caption):
     source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
     agent.client.responses.parse.return_value = SimpleNamespace(
         output_parsed=Generation(
@@ -93,15 +92,15 @@ async def test_generated_hashtags_are_validated(agent, hashtags, caption):
             post=Draft(
                 title="Post",
                 caption=caption,
-                hashtags=hashtags,
                 topic="Software",
                 image_brief="Arte",
                 source_urls=[source.url],
             ),
         )
     )
-    with pytest.raises(ValueError, match="[Hh]ashtags"):
-        await agent.generate(source, [])
+    result = await agent.generate(source, [])
+    assert "#" not in result.post.caption
+    assert "hashtags" not in result.post.model_dump()
 
 
 @pytest.mark.parametrize("separator", [" ", "\n\n"])
@@ -124,7 +123,7 @@ async def test_complete_generated_caption_is_preserved(agent, separator):
     )
     result = await agent.generate(source, [])
     assert result.post.caption == (
-        "Texto final pronto.\n\nFale com a Zion.\n\n#Zion #Sites #Software"
+        "Texto final pronto.\n\nFale com a Zion."
     )
     request = agent.client.responses.parse.call_args.kwargs
     assert request["store"] is False
@@ -132,10 +131,8 @@ async def test_complete_generated_caption_is_preserved(agent, separator):
     assert "o texto final a publicar" in request["input"][0]["content"]
 
 
-def test_caption_separates_trailing_hashtags():
-    assert format_caption("Fale com a Zion. #Zion #Sites #Software", [
-        "#Zion", "#Sites", "#Software"
-    ]) == "Fale com a Zion.\n\n#Zion #Sites #Software"
+def test_caption_removes_trailing_hashtags():
+    assert format_caption("Fale com a Zion. #Zion #Sites #Software") == "Fale com a Zion."
 
 
 def test_caption_breaks_dense_text_without_changing_words():
@@ -146,13 +143,10 @@ def test_caption_breaks_dense_text_without_changing_words():
         "Com essas informações, sua equipe pode planejar melhorias conforme o negócio cresce.",
         "Converse com a Zion para entender como desenvolver um sistema sob medida.",
     ])
-    formatted = format_caption(body + " #Zion #Sites #Software", [
-        "#Zion", "#Sites", "#Software"
-    ])
+    formatted = format_caption(body + " #Zion #Sites #Software")
     blocks = formatted.split("\n\n")
-    assert len(blocks) >= 3
-    assert " ".join(blocks[:-1]) == body
-    assert blocks[-1] == "#Zion #Sites #Software"
+    assert len(blocks) >= 2
+    assert " ".join(blocks) == body
 
 
 def test_caption_preserves_lists_and_normalizes_line_endings():
@@ -160,14 +154,14 @@ def test_caption_preserves_lists_and_normalizes_line_endings():
         "Seu site sob controle.\r\n\r\n• Código próprio\r\n• Documentação"
         "\r\n\r\nFale com a Zion.\r\n\r\n#Zion #Sites #Software"
     )
-    assert format_caption(caption, ["#Zion", "#Sites", "#Software"]) == caption.replace(
-        "\r\n", "\n"
+    assert format_caption(caption) == (
+        "Seu site sob controle.\n\n• Código próprio\n• Documentação\n\nFale com a Zion."
     )
 
 
 async def test_formatted_generation_respects_caption_limit(agent):
     source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
-    caption = "A" * (2200 - len(" #Zion #Sites #Software")) + " #Zion #Sites #Software"
+    caption = ("A" * 298 + ". ") * 7 + "B" * 99
     agent.client.responses.parse.return_value = SimpleNamespace(
         output_parsed=Generation(
             should_create=True,
@@ -191,9 +185,7 @@ async def test_generation_schema_requires_exact_translated_source(agent):
     urls = schema["$defs"]["SourceDraft"]["properties"]["source_urls"]
     assert urls["items"]["enum"] == [url]
     assert urls["minItems"] == urls["maxItems"] == 1
-    hashtags = schema["$defs"]["SourceDraft"]["properties"]["hashtags"]
-    assert hashtags["minItems"] == 3
-    assert hashtags["maxItems"] == 6
+    assert "hashtags" not in schema["$defs"]["SourceDraft"]["properties"]
 
 
 def test_generation_schema_does_not_reuse_another_source_url():

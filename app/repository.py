@@ -9,6 +9,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config import get_settings
 from app.models import PostOut
+from app.text import remove_hashtags
 
 
 def digest(text: str) -> str:
@@ -27,6 +28,7 @@ def public_post(document: dict) -> PostOut:
         {
             **document,
             "id": str(document["_id"]),
+            "caption": remove_hashtags(document["caption"]),
             "image_url": document.get("image_url") or get_settings().default_post_image_url,
         }
     )

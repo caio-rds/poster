@@ -124,8 +124,7 @@ Exemplo de post retornado:
 {
   "id": "507f1f77bcf86cd799439011",
   "title": "Sua empresa precisa de software sob medida?",
-  "caption": "Uma legenda completa, com chamada para ação e hashtags. #Zion",
-  "hashtags": ["#Zion"],
+  "caption": "Uma legenda completa, com chamada para ação.",
   "image_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.jpg",
   "image_brief": null,
   "topic": "Quando adotar software sob medida",
@@ -139,12 +138,14 @@ Exemplo de post retornado:
 ```
 
 O prompt do agente em `app/agent.py` define público, objetivo, estrutura, tom, originalidade
-e limites factuais. A legenda deve ser o texto final, com uma chamada para ação e 3 a 6
-hashtags distintas; o agente valida as hashtags, as fontes e os campos antes de gravar.
+e limites factuais. A legenda deve ser o texto final, com uma chamada para ação e sem
+hashtags; o agente valida as fontes e os campos antes de gravar.
 As legendas usam parágrafos curtos separados por uma linha em branco, chamada para ação
-em um bloco próprio e hashtags ao final. O worker também separa automaticamente blocos
-densos por frases e isola as hashtags, preservando listas e quebras já existentes.
-O conteúdo pronto inclui título, legenda de até 2200 caracteres com hashtags, tema, fontes
+em um bloco próprio. O worker também separa automaticamente blocos
+densos por frases, preservando listas e quebras já existentes.
+O campo `hashtags` não é gerado nem retornado pela API. As hashtags também são removidas
+da legenda ao gerar novos posts e ao retornar posts antigos, sem modificar o histórico salvo.
+O conteúdo pronto inclui título, legenda de até 2200 caracteres sem hashtags, tema, fontes
 e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
 diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem

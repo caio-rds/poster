@@ -78,6 +78,27 @@ async def test_list_pagination_and_filter(api, document):
     repo.list_posts.assert_awaited_once_with("ready", 10, 5)
 
 
+@pytest.mark.parametrize("route", ["/posts", "/posts/next", "/posts/{id}/status"])
+async def test_api_removes_legacy_hashtags_from_all_post_responses(api, document, route):
+    client, repo = api
+    document["caption"] = "Legenda #Zion com C# e https://site.test/#secao.\n\n#Software"
+    document["hashtags"] = ["#Zion", "#Software"]
+    repo.list_posts.return_value = ([document], 1)
+    repo.next_post.return_value = document
+    repo.mark_posted.return_value = document
+    if "{id}" in route:
+        response = await client.patch(
+            route.replace("{id}", str(document["_id"])), json={"status": "posted"}
+        )
+    else:
+        response = await client.get(route)
+    assert response.status_code == 200
+    item = response.json()["items"][0] if route == "/posts" else response.json()
+    assert item["caption"] == "Legenda com C# e https://site.test/#secao."
+    assert "hashtags" not in item
+    assert document["hashtags"] == ["#Zion", "#Software"]
+
+
 async def test_list_returns_featured_image_without_changing_status(api, document):
     client, repo = api
     document.pop("image_brief")

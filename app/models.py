@@ -13,7 +13,6 @@ class PostStatus(StrEnum):
 class Draft(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     caption: str = Field(min_length=1, max_length=2200)
-    hashtags: list[str] = Field(max_length=10)
     topic: str = Field(min_length=1, max_length=300)
     source_urls: list[str] = Field(min_length=1)
 
