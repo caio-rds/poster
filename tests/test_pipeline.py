@@ -49,6 +49,7 @@ def source():
         title="Performance",
         text="Conteúdo original sobre performance web.",
         kind="blog",
+        image_url="https://cms.example/featured.jpg",
     )
 
 
@@ -96,17 +97,25 @@ async def test_processed_blog_updates_image_only_without_regenerating(pipeline, 
 
 
 async def test_missing_wordpress_image_does_not_erase_existing_image(pipeline, source):
+    source.image_url = None
     pipeline.db.sources.find_one.return_value = {"outcome": "created"}
     await pipeline.process(source)
     pipeline.db.posts.update_many.assert_not_awaited()
 
 
-async def test_post_without_featured_image_saves_institutional_fallback(pipeline, source):
-    pipeline.settings.default_post_image_url = "https://cms.example/institutional.jpg"
+@pytest.mark.parametrize("kind,image", [
+    ("blog", None),
+    ("blog", "https://zionsoftwarehouse.com.br/og-image.webp"),
+    ("website", "https://cms.example/featured.jpg"),
+])
+async def test_generation_requires_blog_with_real_image(pipeline, source, kind, image):
+    source.kind = kind
+    source.image_url = image
     await pipeline.process(source)
-    document = pipeline.repo.insert.call_args.args[0]
-    assert document["image_url"] == "https://cms.example/institutional.jpg"
-    assert document["status"] == "ready"
+    pipeline.repo.insert.assert_not_awaited()
+    pipeline.agent.generate.assert_not_awaited()
+    pipeline.agent.embed.assert_not_awaited()
+    pipeline.db.sources.update_one.assert_not_awaited()
 
 
 async def test_recovers_insert_before_source_record(pipeline, source):
@@ -185,7 +194,49 @@ async def test_nearest_considers_entire_matching_model_history():
     nearest = await PostRepository(db).nearest([1, 0], "model", limit=5)
     assert len(nearest) == 5
     assert nearest[0][1]["title"] == "0"
-    assert db.posts.find.call_args.args[0] == {"embedding_model": "model"}
+    assert db.posts.find.call_args.args[0] == {
+        "embedding_model": "model",
+        "$or": [{"archived": {"$ne": True}}, {"status": "posted"}],
+    }
+
+
+async def test_archived_posts_are_excluded_from_api_operations():
+    db = SimpleNamespace(posts=Mock())
+    db.posts.find_one_and_update = AsyncMock(return_value=None)
+    db.posts.find_one = AsyncMock(return_value=None)
+    db.posts.count_documents = AsyncMock(return_value=0)
+    cursor = Mock()
+    cursor.sort.return_value = cursor
+    cursor.skip.return_value = cursor
+    cursor.limit.return_value = cursor
+    cursor.to_list = AsyncMock(return_value=[])
+    db.posts.find.return_value = cursor
+    repo = PostRepository(db)
+    assert await repo.list_posts("ready", 0, 20) == ([], 0)
+    db.posts.find.assert_called_once_with({"archived": {"$ne": True}, "status": "ready"})
+    assert await repo.next_post() is None
+    assert db.posts.find_one_and_update.call_args.args[0]["archived"] == {"$ne": True}
+    assert await repo.mark_posted(ObjectId()) is None
+    assert db.posts.find_one.call_args.args[0]["archived"] == {"$ne": True}
+
+
+async def test_worker_cycle_fetches_only_cms_for_new_posts(pipeline):
+    import httpx
+
+    pipeline.reindex = AsyncMock()
+    pipeline.process = AsyncMock()
+    pipeline.settings.instagram_required = False
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        assert request.url.host == "cms.zionsoftwarehouse.com.br"
+        return httpx.Response(200, json=[])
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        await pipeline.cycle(client)
+    assert len(requests) == 1
+    pipeline.process.assert_not_awaited()
 
 
 async def test_worker_does_not_run_when_another_has_lease():

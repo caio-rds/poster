@@ -68,9 +68,9 @@ OpenAI, sem imprimir credenciais. Se falhar, retorna código de saída 1.
 
 Com `WORKER_ENABLED=true`, basta iniciar/reiniciar a aplicação no cPanel. O worker faz
 o primeiro ciclo imediatamente e os seguintes a cada `WORKER_INTERVAL_SECONDS`.
-Ele explora links internos e sitemaps das páginas institucionais e consulta os artigos
+Ele consulta somente artigos com imagem destacada para gerar novos posts
 pela API WordPress em `https://cms.zionsoftwarehouse.com.br/wp-json/wp/v2/posts`.
-As páginas HTML do blog são excluídas da varredura. O worker prepara posts originais
+Páginas institucionais não geram novos posts. O worker prepara posts originais
 no MongoDB. O lock coordena execuções de processos Passenger diferentes.
 
 Para executar um ciclo manual, use:

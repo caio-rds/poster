@@ -148,7 +148,7 @@ O conteúdo pronto inclui título, legenda de até 2200 caracteres com hashtags,
 e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
 diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem
-`image_url`; sem imagem destacada válida, usa a imagem institucional definida em
+`image_url`; na leitura de posts antigos sem imagem, usa a imagem institucional definida em
 `DEFAULT_POST_IMAGE_URL` (padrão: `https://zionsoftwarehouse.com.br/og-image.webp`).
 O fallback também é aplicado na leitura de posts antigos que ainda não têm imagem salva.
 `image_brief` permanece na resposta por compatibilidade com posts antigos; novos posts
@@ -165,8 +165,8 @@ Uma resposta do CMS sem imagem não apaga uma URL já salva.
 
 1. Atualiza os embeddings antigos se `OPENAI_EMBEDDING_MODEL` mudar.
 2. Coleta o histórico do perfil Instagram autenticado e salva suas legendas como `posted`.
-3. Coleta as páginas institucionais seguindo links e sitemaps, respeitando `robots.txt`.
-   Coleta os artigos pela API REST do WordPress no CMS, sem visitar páginas HTML do blog.
+3. Coleta artigos pela API REST do WordPress no CMS, sem visitar páginas HTML do blog.
+   Só gera posts quando o artigo tem imagem destacada; páginas institucionais não geram posts.
    Remove scripts, navegação e rodapés; limita texto por fonte a 24 mil caracteres.
 4. Busca os cinco posts mais próximos da fonte e pede ao agente um recorte novo e fundamentado.
 5. Compara o post gerado com todos os posts do mesmo modelo de embedding, inclusive publicados.
@@ -180,6 +180,10 @@ ficam elegíveis para nova tentativa no ciclo seguinte. A coleção `sources` re
 de descarte; `posts` guarda os posts e seus embeddings. Um lock MongoDB com expiração e
 renovação coordena os workers; a perda do lock cancela o processamento.
 
+Posts arquivados (`archived=true`) ficam fora da listagem e da fila da API. Os que já foram
+publicados continuam no histórico de deduplicação; rascunhos arquivados não bloqueiam novas
+gerações. Arquivar não altera o status de publicação original.
+
 A comparação percorre todo o histórico em memória limitada, com custo O(n) por consulta.
 Funciona em MongoDB local, sem Atlas Vector Search. Para grandes volumes, substitua essa
 busca por índice vetorial. A deduplicação semântica é heurística: calibre o limiar com os posts
@@ -187,7 +191,9 @@ reais; ela pode descartar recortes próximos ou deixar passar repetições.
 
 O worker inicia junto com a API, roda imediatamente e repete a cada `WORKER_INTERVAL_SECONDS`
 (padrão: uma hora). Falhas tentam novamente após `WORKER_RETRY_SECONDS` (30 segundos).
-Gera até um post por fonte nova. `CRAWL_MAX_PAGES` limita as páginas a considerar (100),
+Gera até um post por artigo novo com imagem destacada. Não usa imagem institucional para
+novos posts. O coletor institucional permanece disponível apenas para diagnóstico.
+Nesse diagnóstico, `CRAWL_MAX_PAGES` limita as páginas a considerar (100),
 `CRAWL_MAX_DEPTH` limita a profundidade dos links (3) e `MAX_BLOG_ARTICLES` limita artigos (30).
 URLs de sitemap também são pontos iniciais da busca. `CRAWL_DELAY_SECONDS` define o intervalo
 mínimo entre requests (1 segundo), respeitando limites maiores em `robots.txt`.

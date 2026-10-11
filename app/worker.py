@@ -13,7 +13,6 @@ from app.agent import EditorialAgent, embedding_text
 from app.collectors import (
     USER_AGENT,
     InstagramCollector,
-    WebsiteCollector,
     WordPressCollector,
     blog_source_urls,
 )
@@ -61,6 +60,13 @@ class Pipeline:
             )
 
     async def process(self, source: Source):
+        if source.kind != "instagram" and (
+            source.kind != "blog"
+            or not source.image_url
+            or source.image_url == self.settings.default_post_image_url
+        ):
+            logger.info("Fonte ignorada: não é artigo com imagem destacada (%s)", source.url)
+            return
         if source.kind == "blog" and source.image_url:
             # Atualiza também posts antigos sem regenerar legendas ou alterar status/datas.
             await self.db.posts.update_many(
@@ -115,7 +121,7 @@ class Pipeline:
         now = datetime.now(UTC)
         document = {
             **post.model_dump(),
-            "image_url": source.image_url or self.settings.default_post_image_url,
+            "image_url": source.image_url,
             "status": status,
             "origin": source.kind,
             "created_at": now,
@@ -149,20 +155,16 @@ class Pipeline:
                 logger.warning("Coleta do Instagram indisponível (%s)", type(exc).__name__)
                 if self.settings.instagram_required:
                     raise RuntimeError("Instagram obrigatório indisponível") from None
-        for collector in (
-            WebsiteCollector(client, self.settings),
-            WordPressCollector(client, self.settings),
-        ):
-            async for source in collector.collect():
-                try:
-                    await self.process(source)
-                except Exception as exc:
-                    failures += 1
-                    logger.error(
-                        "Falha ao processar %s: %s; tentará novamente",
-                        source.url,
-                        failure_hint(exc),
-                    )
+        async for source in WordPressCollector(client, self.settings).collect():
+            try:
+                await self.process(source)
+            except Exception as exc:
+                failures += 1
+                logger.error(
+                    "Falha ao processar %s: %s; tentará novamente",
+                    source.url,
+                    failure_hint(exc),
+                )
         if failures:
             raise RuntimeError(f"{failures} fonte(s) não processada(s)")
 

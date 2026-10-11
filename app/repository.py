@@ -39,14 +39,16 @@ class PostRepository:
     async def next_post(self):
         now = datetime.now(UTC)
         return await self.db.posts.find_one_and_update(
-            {"status": "ready"},
+            {"status": "ready", "archived": {"$ne": True}},
             {"$set": {"status": "posted", "posted_at": now, "updated_at": now}},
             sort=[("created_at", 1), ("_id", 1)],
             return_document=ReturnDocument.AFTER,
         )
 
     async def list_posts(self, status, offset, limit):
-        query = {"status": status} if status else {}
+        query = {"archived": {"$ne": True}}
+        if status:
+            query["status"] = status
         total = await self.db.posts.count_documents(query)
         items = await (
             self.db.posts.find(query)
@@ -60,17 +62,22 @@ class PostRepository:
     async def mark_posted(self, post_id: ObjectId):
         now = datetime.now(UTC)
         document = await self.db.posts.find_one_and_update(
-            {"_id": post_id, "status": "ready"},
+            {"_id": post_id, "status": "ready", "archived": {"$ne": True}},
             {"$set": {"status": "posted", "posted_at": now, "updated_at": now}},
             return_document=ReturnDocument.AFTER,
         )
-        return document or await self.db.posts.find_one({"_id": post_id})
+        return document or await self.db.posts.find_one(
+            {"_id": post_id, "archived": {"$ne": True}}
+        )
 
     async def nearest(self, vector, model, limit=5):
         # Examina todos os posts, inclusive os publicados, sem depender de MongoDB Atlas.
         best = []
         cursor = self.db.posts.find(
-            {"embedding_model": model},
+            {
+                "embedding_model": model,
+                "$or": [{"archived": {"$ne": True}}, {"status": "posted"}],
+            },
             {"embedding": 1, "title": 1, "caption": 1, "topic": 1},
         )
         async for item in cursor:
