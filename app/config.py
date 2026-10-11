@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
     api_key: SecretStr = SecretStr("")
+    public_api_url: str | None = Field(default=None, pattern=r"^https?://[^/?#]+/?$")
     cors_allow_origins: list[str] = Field(
         default_factory=lambda: [
             "https://zionsoftwarehouse.com.br",

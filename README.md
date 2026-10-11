@@ -125,7 +125,8 @@ Exemplo de post retornado:
   "id": "507f1f77bcf86cd799439011",
   "title": "Sua empresa precisa de software sob medida?",
   "caption": "Sua empresa precisa de software sob medida?\n\nUma legenda curta, com chamada para ação.",
-  "image_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.jpg",
+  "image_url": "https://SEU-SERVICO.onrender.com/posts/507f1f77bcf86cd799439011/image.jpg",
+  "image_source_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.webp",
   "image_brief": "Arte com fundo azul, título em destaque e até três pontos de apoio.",
   "topic": "Quando adotar software sob medida",
   "source_urls": ["https://zionsoftwarehouse.com.br/blog/guia-completo-geo-2026"],
@@ -154,7 +155,7 @@ uma linha em branco e a legenda, com no máximo 700 caracteres no total. Não co
 priorizando frases completas e a chamada final quando ela cabe no limite.
 Novas gerações usam títulos de até 100 caracteres e legendas de até 500 caracteres.
 O conteúdo pronto inclui título, texto curto de publicação sem hashtags, tema, fontes
-e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
+e `image_url`, com uma URL pública da API que entrega a imagem em JPEG. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
 diretamente. O agente também gera `image_brief`, com composição, cores, título na arte e
 até três pontos de apoio, sem emojis ou hashtags, com no máximo 1200 caracteres.
@@ -163,6 +164,16 @@ Todas as respostas de posts incluem
 `image_url`; na leitura de posts antigos sem imagem, usa a imagem institucional definida em
 `DEFAULT_POST_IMAGE_URL` (padrão: `https://zionsoftwarehouse.com.br/og-image.webp`).
 O fallback também é aplicado na leitura de posts antigos que ainda não têm imagem salva.
+Na Render, configure `PUBLIC_API_URL=https://SEU-SERVICO.onrender.com` para garantir
+links HTTPS, mesmo atrás de um proxy. Sem essa variável, o link usa a base da requisição.
+No campo de imagem do Zapier, use `image_url` da nova resposta. `image_source_url`
+preserva a URL original do blog para diagnóstico. Atualize a amostra do Zapier usando
+`GET /posts?status=ready`, pois `/posts/next` consome a fila.
+`GET` e `HEAD /posts/{id}/image.jpg` são públicos: plataformas externas baixam imagens
+sem enviar `apikey`. Essas rotas apenas leem a imagem e não alteram o post. O servidor
+baixa somente imagens dos domínios da Zion, converte WebP/PNG para JPEG, remove metadados
+e limita o maior lado a 1440 pixels. Uma falha no CMS retorna HTTP 502; a conversão
+não elimina indisponibilidade ou bloqueios de rede no servidor de origem.
 Novos posts exigem briefing; posts antigos mantêm seus briefings salvos e só retornam `null`
 se não tiverem esse campo. Embeddings e hashes ficam internos no MongoDB.
 

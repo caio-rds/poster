@@ -50,6 +50,8 @@ openai==2.54.0
     # via zion-posts
 opentelemetry-api==1.45.0
     # via fastapi
+pillow==12.3.0
+    # via zion-posts
 pydantic==2.13.5
     # via
     #   fastapi

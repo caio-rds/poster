@@ -23,13 +23,19 @@ def cosine(left: list[float], right: list[float]) -> float:
     return sum(a * b for a, b in zip(left, right, strict=True)) / denominator if denominator else 0
 
 
-def public_post(document: dict) -> PostOut:
+def public_post(document: dict, image_base_url: str | None = None) -> PostOut:
+    image_base_url = get_settings().public_api_url or image_base_url
+    source_url = document.get("image_url") or get_settings().default_post_image_url
     return PostOut.model_validate(
         {
             **document,
             "id": str(document["_id"]),
             "caption": publication_text(document["title"], document["caption"]),
-            "image_url": document.get("image_url") or get_settings().default_post_image_url,
+            "image_source_url": source_url,
+            "image_url": (
+                f"{image_base_url.rstrip('/')}/posts/{document['_id']}/image.jpg"
+                if image_base_url and source_url else source_url
+            ),
         }
     )
 
@@ -37,6 +43,11 @@ def public_post(document: dict) -> PostOut:
 class PostRepository:
     def __init__(self, db):
         self.db = db
+
+    async def image_post(self, post_id: ObjectId):
+        return await self.db.posts.find_one(
+            {"_id": post_id, "archived": {"$ne": True}}, {"image_url": 1}
+        )
 
     async def next_post(self):
         now = datetime.now(UTC)

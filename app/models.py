@@ -51,6 +51,7 @@ class PostOut(Draft):
     caption: str = Field(min_length=1, max_length=POST_TEXT_LIMIT)
     image_url: str | None = None
     id: str
+    image_source_url: str | None = None
     status: PostStatus
     created_at: datetime
     updated_at: datetime

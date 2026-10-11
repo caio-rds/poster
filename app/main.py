@@ -6,12 +6,14 @@ import uvicorn
 from bson import ObjectId
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.security import APIKeyHeader
 from pymongo.errors import PyMongoError
 
 from app.config import Settings, get_settings
 from app.cors import cors_options
 from app.database import create_client
+from app.images import download_jpeg
 from app.models import PostOut, PostPage, PostStatus, StatusUpdate
 from app.repository import PostRepository, public_post
 from app.runtime import BackgroundWorker
@@ -67,23 +69,24 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/posts/next", response_model=PostOut | None)
-async def next_post(repo: Repo):
+async def next_post(repo: Repo, request: Request):
     document = await repo.next_post()
     if document is None:
         return None
-    return public_post(document)
+    return public_post(document, str(request.base_url))
 
 
 @router.get("/posts", response_model=PostPage)
 async def list_posts(
     repo: Repo,
+    request: Request,
     status: PostStatus | None = None,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ):
     documents, total = await repo.list_posts(status, offset, limit)
     return PostPage(
-        items=[public_post(document) for document in documents],
+        items=[public_post(document, str(request.base_url)) for document in documents],
         total=total,
         offset=offset,
         limit=limit,
@@ -91,13 +94,33 @@ async def list_posts(
 
 
 @router.patch("/posts/{post_id}/status", response_model=PostOut)
-async def update_status(post_id: str, body: StatusUpdate, repo: Repo):
+async def update_status(post_id: str, body: StatusUpdate, repo: Repo, request: Request):
     if not ObjectId.is_valid(post_id):
         raise HTTPException(status_code=422, detail="ID de post inválido")
     document = await repo.mark_posted(ObjectId(post_id))
     if document is None:
         raise HTTPException(status_code=404, detail="Post não encontrado")
-    return public_post(document)
+    return public_post(document, str(request.base_url))
+
+
+async def post_image(post_id: str, repo: Repo):
+    if not ObjectId.is_valid(post_id):
+        raise HTTPException(422, "ID de post inválido")
+    document = await repo.image_post(ObjectId(post_id))
+    if document is None:
+        raise HTTPException(404, "Post não encontrado")
+    url = document.get("image_url") or get_settings().default_post_image_url
+    if not url:
+        raise HTTPException(404, "Post sem imagem")
+    content = await download_jpeg(url)
+    return Response(
+        content, media_type="image/jpeg",
+        headers={
+            "Content-Disposition": f'inline; filename="{post_id}.jpg"',
+            "Cache-Control": "public, max-age=3600",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 def create_app(settings: Settings | None = None, *, enable_cors=True) -> FastAPI:
@@ -105,6 +128,12 @@ def create_app(settings: Settings | None = None, *, enable_cors=True) -> FastAPI
     api.add_api_route("/health", health, methods=["GET"], tags=["health"])
     api.add_api_route("/health", health, methods=["HEAD"], include_in_schema=False)
     api.include_router(router)
+    api.add_api_route(
+        "/posts/{post_id}/image.jpg", post_image, methods=["GET"], tags=["images"]
+    )
+    api.add_api_route(
+        "/posts/{post_id}/image.jpg", post_image, methods=["HEAD"], include_in_schema=False
+    )
     api.add_exception_handler(PyMongoError, database_error)
     if enable_cors:
         api.add_middleware(CORSMiddleware, **cors_options(settings or get_settings()))

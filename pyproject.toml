@@ -16,6 +16,7 @@ dependencies = [
   "httpx>=0.28,<1",
   "beautifulsoup4>=4.13,<5",
   "a2wsgi>=1.10,<2",
+  "pillow>=11,<13",
 ]
 
 [project.optional-dependencies]

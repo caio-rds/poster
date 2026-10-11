@@ -107,7 +107,8 @@ async def test_list_returns_featured_image_without_changing_status(api, document
     response = await client.get("/posts?status=ready")
     assert response.status_code == 200
     item = response.json()["items"][0]
-    assert item["image_url"] == document["image_url"]
+    assert item["image_source_url"] == document["image_url"]
+    assert item["image_url"] == f"http://test/posts/{document['_id']}/image.jpg"
     assert item["image_brief"] is None
     assert item["status"] == "ready"
     assert item["posted_at"] is None
@@ -177,7 +178,7 @@ async def test_legacy_posts_without_image_still_return(api, document, image):
     response = await client.get("/posts")
     assert response.status_code == 200
     item = response.json()["items"][0]
-    assert item["image_url"] == "https://zionsoftwarehouse.com.br/og-image.webp"
+    assert item["image_source_url"] == "https://zionsoftwarehouse.com.br/og-image.webp"
     assert item["image_brief"] == document["image_brief"]
 
 
@@ -187,7 +188,19 @@ async def test_image_fallback_can_be_configured(api, document, monkeypatch):
     client, repo = api
     repo.list_posts.return_value = ([document], 1)
     response = await client.get("/posts")
-    assert response.json()["items"][0]["image_url"] == "https://cms.example/institutional.jpg"
+    assert response.json()["items"][0]["image_source_url"] == "https://cms.example/institutional.jpg"
+
+
+async def test_public_image_url_uses_configured_https_origin(api, document, monkeypatch):
+    monkeypatch.setenv("PUBLIC_API_URL", "https://poster.onrender.com/")
+    get_settings.cache_clear()
+    client, repo = api
+    repo.list_posts.return_value = ([document], 1)
+    response = await client.get("/posts?status=ready")
+    item = response.json()["items"][0]
+    assert item["image_url"] == f"https://poster.onrender.com/posts/{document['_id']}/image.jpg"
+    assert item["status"] == "ready"
+    repo.next_post.assert_not_awaited()
 
 
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "status=invalid"])
@@ -288,7 +301,7 @@ def test_swagger_exposes_api_key_authorization():
     }
     for url, path in schema["paths"].items():
         for operation in path.values():
-            if url == "/health":
+            if url == "/health" or url.endswith("/image.jpg"):
                 assert "security" not in operation
             else:
                 assert operation["security"] == [{"APIKeyHeader": []}]
