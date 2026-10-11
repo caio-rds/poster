@@ -55,6 +55,16 @@ class Pipeline:
             )
 
     async def process(self, source: Source):
+        if source.kind == "blog":
+            # Atualiza também posts antigos sem regenerar legendas ou alterar status/datas.
+            await self.db.posts.update_many(
+                {
+                    "origin": "blog",
+                    "source_urls": source.url,
+                    "image_url": {"$ne": source.image_url},
+                },
+                {"$set": {"image_url": source.image_url}},
+            )
         fingerprint = digest(f"{source.url}\n{source.text}")
         if await self.db.sources.find_one({"fingerprint": fingerprint}):
             return
@@ -71,7 +81,6 @@ class Pipeline:
                 title=source.title,
                 caption=source.text,
                 hashtags=[],
-                image_brief="Publicação existente no Instagram",
                 topic=source.title,
                 source_urls=[source.url],
             )
@@ -101,6 +110,7 @@ class Pipeline:
         now = datetime.now(UTC)
         document = {
             **post.model_dump(),
+            "image_url": source.image_url,
             "status": status,
             "origin": source.kind,
             "created_at": now,

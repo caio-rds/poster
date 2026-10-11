@@ -68,6 +68,33 @@ async def test_processed_source_does_not_call_openai(pipeline, source):
     pipeline.repo.insert.assert_not_awaited()
 
 
+async def test_blog_image_is_persisted_without_requesting_art(pipeline, source):
+    source.image_url = "https://cms.example/featured.jpg"
+    await pipeline.process(source)
+    document = pipeline.repo.insert.call_args.args[0]
+    assert document["image_url"] == source.image_url
+    assert "image_brief" not in document
+    assert document["status"] == "ready"
+    assert document["posted_at"] is None
+
+
+async def test_processed_blog_updates_image_only_without_regenerating(pipeline, source):
+    source.image_url = "https://cms.example/featured.jpg"
+    pipeline.db.sources.find_one.return_value = {"outcome": "created"}
+    await pipeline.process(source)
+    pipeline.db.posts.update_many.assert_awaited_once_with(
+        {
+            "origin": "blog",
+            "source_urls": source.url,
+            "image_url": {"$ne": source.image_url},
+        },
+        {"$set": {"image_url": source.image_url}},
+    )
+    pipeline.agent.generate.assert_not_awaited()
+    pipeline.agent.embed.assert_not_awaited()
+    pipeline.repo.insert.assert_not_awaited()
+
+
 async def test_recovers_insert_before_source_record(pipeline, source):
     pipeline.db.posts.find_one.return_value = {"_id": ObjectId()}
     await pipeline.process(source)

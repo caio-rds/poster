@@ -250,6 +250,28 @@ class WebsiteCollector:
             raise ValueError("Nenhuma página com conteúdo útil foi coletada")
 
 
+def featured_image_url(post: dict) -> str | None:
+    embedded = post.get("_embedded")
+    if not isinstance(embedded, dict):
+        return None
+    media = embedded.get("wp:featuredmedia")
+    if not isinstance(media, list) or not media or not isinstance(media[0], dict):
+        return None
+    url = media[0].get("source_url")
+    if not isinstance(url, str):
+        return None
+    url = url.strip()
+    try:
+        parts = urlsplit(url)
+        if parts.scheme not in {"http", "https"} or not parts.hostname:
+            return None
+        if parts.username or parts.password:
+            return None
+    except ValueError:
+        return None
+    return url
+
+
 class WordPressCollector:
     def __init__(self, client: httpx.AsyncClient, settings: Settings):
         self.client = client
@@ -301,6 +323,7 @@ class WordPressCollector:
                         " ", strip=True
                     )
                     source.external_id = str(post["id"])
+                    source.image_url = featured_image_url(post)
                     if post.get("date_gmt"):
                         source.published_at = datetime.fromisoformat(
                             post["date_gmt"].replace("Z", "+00:00")

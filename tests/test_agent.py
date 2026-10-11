@@ -205,3 +205,27 @@ def test_generation_schema_does_not_reuse_another_source_url():
     assert second["$defs"]["SourceDraft"]["properties"]["source_urls"]["items"]["enum"] == [
         "https://site/second"
     ]
+
+
+async def test_generation_does_not_request_or_require_image_brief(agent):
+    source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
+    agent.client.responses.parse.return_value = SimpleNamespace(
+        output_parsed=Generation(
+            should_create=True,
+            reason="Novo recorte",
+            post=Draft(
+                title="Post",
+                caption="Texto final. #Zion #Sites #Software",
+                hashtags=["#Zion", "#Sites", "#Software"],
+                topic="Software",
+                source_urls=[source.url],
+            ),
+        )
+    )
+    result = await agent.generate(source, [])
+    assert result.post is not None
+    request = agent.client.responses.parse.call_args.kwargs
+    properties = request["text_format"].model_json_schema()["$defs"]["SourceDraft"]["properties"]
+    assert "image_brief" not in properties
+    assert "image_url" not in properties
+    assert "image_brief" not in request["input"][0]["content"]

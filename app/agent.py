@@ -32,8 +32,6 @@ ENTREGA OBRIGATÓRIA
   Toda a legenda, incluindo hashtags, deve ter no máximo 2200 caracteres.
 - hashtags: as mesmas hashtags da legenda, cada uma começando com #, sem espaços.
 - topic: descreva a ideia central E o recorte escolhido, para comparar com o histórico.
-- image_brief: descreva a composição da arte, o título e até três pontos de apoio.
-  É orientação de produção; não diga que uma imagem já foi criada.
 - source_urls: somente a URL exata da fonte recebida.
 
 QUALIDADE EDITORIAL
@@ -165,10 +163,7 @@ class EditorialAgent:
                 for tag in post.hashtags
             ):
                 raise ValueError("Hashtags inválidas ou ausentes na legenda")
-            if any(
-                not value.strip()
-                for value in (post.title, post.caption, post.topic, post.image_brief)
-            ):
+            if any(not value.strip() for value in (post.title, post.caption, post.topic)):
                 raise ValueError("Post contém campos vazios")
             if "```" in post.caption:
                 raise ValueError("Legenda deve ser texto pronto para publicação")

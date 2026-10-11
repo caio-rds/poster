@@ -9,6 +9,7 @@ from app.collectors import (
     WordPressCollector,
     article_links,
     extract_source,
+    featured_image_url,
     internal_links,
 )
 from app.config import Settings
@@ -241,6 +242,21 @@ def wordpress_post(identifier=1):
     }
 
 
+@pytest.mark.parametrize(
+    "embedded",
+    [
+        None,
+        {},
+        {"wp:featuredmedia": []},
+        {"wp:featuredmedia": [{"code": "not_found"}]},
+        {"wp:featuredmedia": [{"source_url": "javascript:alert(1)"}]},
+        {"wp:featuredmedia": [{"source_url": "https://user:password@cms.example/a.jpg"}]},
+    ],
+)
+def test_missing_or_invalid_featured_image_returns_none(embedded):
+    assert featured_image_url({"_embedded": embedded}) is None
+
+
 async def test_wordpress_reads_content_and_metadata_from_api_only():
     requested = []
 
@@ -265,6 +281,7 @@ async def test_wordpress_reads_content_and_metadata_from_api_only():
     assert "Ignorar" not in source.text
     assert "<p>" not in source.text
     assert source.external_id == "1"
+    assert source.image_url == "https://cms.example/image.jpg"
     assert source.published_at.isoformat() == "2026-09-01T12:00:00+00:00"
 
 

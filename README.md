@@ -126,14 +126,15 @@ Exemplo de post retornado:
   "title": "Sua empresa precisa de software sob medida?",
   "caption": "Uma legenda completa, com chamada para ação e hashtags. #Zion",
   "hashtags": ["#Zion"],
-  "image_brief": "Orientação visual para produzir a arte do post",
+  "image_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.jpg",
+  "image_brief": null,
   "topic": "Quando adotar software sob medida",
-  "source_urls": ["https://zionsoftwarehouse.com.br/"],
+  "source_urls": ["https://zionsoftwarehouse.com.br/blog/guia-completo-geo-2026"],
   "status": "ready",
   "created_at": "2026-10-01T12:00:00Z",
   "updated_at": "2026-10-01T12:00:00Z",
   "posted_at": null,
-  "origin": "website"
+  "origin": "blog"
 }
 ```
 
@@ -144,8 +145,17 @@ As legendas usam parágrafos curtos separados por uma linha em branco, chamada p
 em um bloco próprio e hashtags ao final. O worker também separa automaticamente blocos
 densos por frases e isola as hashtags, preservando listas e quebras já existentes.
 O conteúdo pronto inclui título, legenda de até 2200 caracteres com hashtags, tema, fontes
-e briefing de arte. `image_brief` é uma descrição para produzir a imagem, não um arquivo
-de imagem gerado. Embeddings e hashes ficam internos no MongoDB.
+e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
+`_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
+diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem
+`image_url`; sem imagem destacada válida, o valor é `null`.
+`image_brief` permanece na resposta por compatibilidade com posts antigos; novos posts
+retornam `null`. Embeddings e hashes ficam internos no MongoDB.
+
+A cada coleta, o worker também sincroniza a imagem dos posts existentes que citam a mesma
+URL de artigo, inclusive fontes já processadas. Essa sincronização não altera status,
+legenda, `posted_at` ou `updated_at`, nem gera posts novamente. Artigos fora do limite de
+`MAX_BLOG_ARTICLES` só terão suas imagens sincronizadas quando forem coletados.
 
 ## Worker e deduplicação
 

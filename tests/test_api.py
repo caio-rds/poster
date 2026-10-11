@@ -78,6 +78,32 @@ async def test_list_pagination_and_filter(api, document):
     repo.list_posts.assert_awaited_once_with("ready", 10, 5)
 
 
+async def test_list_returns_featured_image_without_changing_status(api, document):
+    client, repo = api
+    document.pop("image_brief")
+    document["image_url"] = "https://cms.example/featured.jpg"
+    repo.list_posts.return_value = ([document], 1)
+    response = await client.get("/posts?status=ready")
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["image_url"] == document["image_url"]
+    assert item["image_brief"] is None
+    assert item["status"] == "ready"
+    assert item["posted_at"] is None
+    repo.next_post.assert_not_awaited()
+    repo.mark_posted.assert_not_awaited()
+
+
+async def test_legacy_posts_without_image_still_return(api, document):
+    client, repo = api
+    repo.list_posts.return_value = ([document], 1)
+    response = await client.get("/posts")
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["image_url"] is None
+    assert item["image_brief"] == document["image_brief"]
+
+
 @pytest.mark.parametrize("query", ["limit=0", "limit=101", "offset=-1", "status=invalid"])
 async def test_invalid_list_inputs(api, query):
     client, _ = api
