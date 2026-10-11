@@ -17,8 +17,9 @@ class Draft(BaseModel):
     caption: str = Field(min_length=1, max_length=2200)
     topic: str = Field(min_length=1, max_length=300)
     source_urls: list[str] = Field(min_length=1)
+    image_brief: str | None = None
 
-    @field_validator("title", "caption", "topic", mode="before")
+    @field_validator("title", "caption", "topic", "image_brief", mode="before")
     @classmethod
     def clean_text(cls, value):
         return remove_emojis(value) if isinstance(value, str) else value
@@ -49,20 +50,12 @@ class Source(BaseModel):
 class PostOut(Draft):
     caption: str = Field(min_length=1, max_length=POST_TEXT_LIMIT)
     image_url: str | None = None
-    # Compatibilidade com posts antigos; novos posts usam a imagem da fonte.
-    image_brief: str | None = None
     id: str
     status: PostStatus
     created_at: datetime
     updated_at: datetime
     posted_at: datetime | None = None
     origin: str
-
-    @field_validator("image_brief", mode="before")
-    @classmethod
-    def clean_legacy_brief(cls, value):
-        return remove_emojis(value) if isinstance(value, str) else value
-
 
 class PostPage(BaseModel):
     items: list[PostOut]

@@ -126,7 +126,7 @@ Exemplo de post retornado:
   "title": "Sua empresa precisa de software sob medida?",
   "caption": "Sua empresa precisa de software sob medida?\n\nUma legenda curta, com chamada para ação.",
   "image_url": "https://cms.zionsoftwarehouse.com.br/wp-content/uploads/imagem-do-artigo.jpg",
-  "image_brief": null,
+  "image_brief": "Arte com fundo azul, título em destaque e até três pontos de apoio.",
   "topic": "Quando adotar software sob medida",
   "source_urls": ["https://zionsoftwarehouse.com.br/blog/guia-completo-geo-2026"],
   "status": "ready",
@@ -143,7 +143,7 @@ hashtags; o agente valida as fontes e os campos antes de gravar.
 As legendas usam parágrafos curtos separados por uma linha em branco, chamada para ação
 em um bloco próprio. O worker também separa automaticamente blocos
 densos por frases, preservando listas e quebras já existentes.
-Os textos não incluem emojis: título, legenda, tema e briefing antigo são limpos na
+Os textos não incluem emojis: título, legenda, tema e briefing são limpos na
 validação do modelo, tanto na geração quanto nas respostas da API. Acentos, links e listas
 de texto são preservados.
 O campo `hashtags` não é gerado nem retornado pela API. As hashtags também são removidas
@@ -156,12 +156,15 @@ Novas gerações usam títulos de até 100 caracteres e legendas de até 500 car
 O conteúdo pronto inclui título, texto curto de publicação sem hashtags, tema, fontes
 e `image_url`, com a URL original da imagem destacada do artigo. O coletor extrai
 `_embedded["wp:featuredmedia"][0].source_url` da resposta WordPress e o worker salva essa URL
-diretamente, sem pedir ao agente uma imagem ou briefing. Todas as respostas de posts incluem
+diretamente. O agente também gera `image_brief`, com composição, cores, título na arte e
+até três pontos de apoio, sem emojis ou hashtags, com no máximo 1200 caracteres.
+O briefing é separado de `caption` e pode ser usado na etapa de criação de arte.
+Todas as respostas de posts incluem
 `image_url`; na leitura de posts antigos sem imagem, usa a imagem institucional definida em
 `DEFAULT_POST_IMAGE_URL` (padrão: `https://zionsoftwarehouse.com.br/og-image.webp`).
 O fallback também é aplicado na leitura de posts antigos que ainda não têm imagem salva.
-`image_brief` permanece na resposta por compatibilidade com posts antigos; novos posts
-retornam `null`. Embeddings e hashes ficam internos no MongoDB.
+Novos posts exigem briefing; posts antigos mantêm seus briefings salvos e só retornam `null`
+se não tiverem esse campo. Embeddings e hashes ficam internos no MongoDB.
 
 A cada coleta, o worker também sincroniza a imagem dos posts existentes que citam a mesma
 URL de artigo, inclusive fontes já processadas e URLs antigas em inglês/espanhol,

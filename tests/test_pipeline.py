@@ -70,12 +70,12 @@ async def test_processed_source_does_not_call_openai(pipeline, source):
     pipeline.repo.insert.assert_not_awaited()
 
 
-async def test_blog_image_is_persisted_without_requesting_art(pipeline, source):
+async def test_blog_image_and_brief_are_persisted(pipeline, source):
     source.image_url = "https://cms.example/featured.jpg"
     await pipeline.process(source)
     document = pipeline.repo.insert.call_args.args[0]
     assert document["image_url"] == source.image_url
-    assert "image_brief" not in document
+    assert document["image_brief"] == "Arte sobre velocidade"
     assert document["status"] == "ready"
     assert document["posted_at"] is None
 

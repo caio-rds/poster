@@ -30,6 +30,9 @@ ENTREGA OBRIGATÓRIA
   Prefira uma legenda entre 250 e 450 caracteres, com no máximo 500 caracteres.
   Não repita o título na legenda: a API acrescentará o título no início automaticamente.
 - topic: descreva a ideia central E o recorte escolhido, para comparar com o histórico.
+- image_brief: briefing pronto para produzir a arte, com no máximo 1200 caracteres.
+  Descreva composição, cores, título na arte e até três pontos de apoio fiéis ao post.
+  Use texto simples, sem emojis nem hashtags. Não afirme que a imagem já foi criada.
 - source_urls: somente a URL exata da fonte recebida.
 
 QUALIDADE EDITORIAL
@@ -101,6 +104,7 @@ def generation_format(source_url: str) -> type[Generation]:
         __base__=Draft,
         title=(str, Field(min_length=1, max_length=100)),
         caption=(str, Field(min_length=1, max_length=500)),
+        image_brief=(str, Field(min_length=1, max_length=1200)),
         source_urls=(
             list[str],
             Field(
@@ -154,6 +158,8 @@ class EditorialAgent:
             raise ValueError("Post gerado contém fonte não fornecida")
         if result.should_create:
             post = result.post
+            if not post.image_brief or not post.image_brief.strip():
+                raise ValueError("Post contém campos vazios")
             if any(not value.strip() for value in (post.title, post.caption, post.topic)):
                 raise ValueError("Post contém campos vazios")
             if "```" in post.caption:

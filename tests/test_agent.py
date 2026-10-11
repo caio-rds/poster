@@ -201,7 +201,7 @@ def test_generation_schema_does_not_reuse_another_source_url():
     ]
 
 
-async def test_generation_does_not_request_or_require_image_brief(agent):
+async def test_generation_requires_image_brief_and_keeps_source_image_out_of_schema(agent):
     source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
     agent.client.responses.parse.return_value = SimpleNamespace(
         output_parsed=Generation(
@@ -213,6 +213,7 @@ async def test_generation_does_not_request_or_require_image_brief(agent):
                 hashtags=["#Zion", "#Sites", "#Software"],
                 topic="Software",
                 source_urls=[source.url],
+                image_brief="Arte com fundo azul e título em destaque, sem emojis.",
             ),
         )
     )
@@ -220,6 +221,27 @@ async def test_generation_does_not_request_or_require_image_brief(agent):
     assert result.post is not None
     request = agent.client.responses.parse.call_args.kwargs
     properties = request["text_format"].model_json_schema()["$defs"]["SourceDraft"]["properties"]
-    assert "image_brief" not in properties
+    assert "image_brief" in properties
+    assert properties["image_brief"]["maxLength"] == 1200
     assert "image_url" not in properties
-    assert "image_brief" not in request["input"][0]["content"]
+    assert "image_brief" in request["input"][0]["content"]
+
+
+@pytest.mark.parametrize("brief", [None, "   "])
+async def test_new_generation_rejects_missing_image_brief(agent, brief):
+    source = Source(url="https://site/", title="Site", text="Dado", kind="blog")
+    agent.client.responses.parse.return_value = SimpleNamespace(
+        output_parsed=Generation(
+            should_create=True,
+            reason="Novo recorte",
+            post=Draft(
+                title="Post",
+                caption="Texto final curto.",
+                topic="Software",
+                source_urls=[source.url],
+                image_brief=brief,
+            ),
+        )
+    )
+    with pytest.raises(ValueError, match="campos vazios"):
+        await agent.generate(source, [])
