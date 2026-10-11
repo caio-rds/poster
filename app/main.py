@@ -112,7 +112,10 @@ async def post_image(post_id: str, repo: Repo):
     url = document.get("image_url") or get_settings().default_post_image_url
     if not url:
         raise HTTPException(404, "Post sem imagem")
-    content = await download_jpeg(url)
+    content = await repo.cached_image(url)
+    if content is None:
+        content = await download_jpeg(url)
+        await repo.cache_image(url, content)
     return Response(
         content, media_type="image/jpeg",
         headers={

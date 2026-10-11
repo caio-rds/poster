@@ -49,6 +49,17 @@ class PostRepository:
             {"_id": post_id, "archived": {"$ne": True}}, {"image_url": 1}
         )
 
+    async def cached_image(self, url: str) -> bytes | None:
+        cached = await self.db.post_images.find_one({"_id": digest(url)})
+        return bytes(cached["jpeg"]) if cached else None
+
+    async def cache_image(self, url: str, jpeg: bytes):
+        await self.db.post_images.update_one(
+            {"_id": digest(url)},
+            {"$set": {"jpeg": jpeg, "source_url": url, "updated_at": datetime.now(UTC)}},
+            upsert=True,
+        )
+
     async def next_post(self):
         now = datetime.now(UTC)
         return await self.db.posts.find_one_and_update(
