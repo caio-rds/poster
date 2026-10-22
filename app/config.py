@@ -12,6 +12,14 @@ class Settings(BaseSettings):
 
     mongodb_uri: str = "mongodb://localhost:27017"
     mongodb_database: str = "zion"
+    corte_mongodb_database: str = "corte"
+    corte_instagram_access_token: SecretStr = SecretStr("")
+    corte_instagram_user_id: str = ""
+    corte_instagram_required: bool = False
+    client_slug: str = "zion"
+    site_url: str = "https://zionsoftwarehouse.com.br"
+    wordpress_api_url: str = "https://cms.zionsoftwarehouse.com.br/wp-json/wp/v2"
+    instagram_username: str = "zionsoftwarehouse"
     openai_api_key: SecretStr = SecretStr("")
     openai_model: str = "gpt-4.1-mini"
     openai_embedding_model: str = "text-embedding-3-small"
@@ -21,6 +29,8 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "https://zionsoftwarehouse.com.br",
             "https://www.zionsoftwarehouse.com.br",
+            "https://cortevisagismo.com.br",
+            "https://www.cortevisagismo.com.br",
         ]
     )
     cors_max_age: int = Field(default=600, ge=0)
@@ -46,3 +56,23 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def client_settings(settings: Settings, client: str) -> Settings:
+    if client == "zion":
+        return settings
+    if client != "corte":
+        raise ValueError("Cliente desconhecido")
+    if settings.corte_mongodb_database == settings.mongodb_database:
+        raise ValueError("Os bancos Zion e Côrte devem ser diferentes")
+    return settings.model_copy(update={
+        "client_slug": "corte",
+        "mongodb_database": settings.corte_mongodb_database,
+        "site_url": "https://www.cortevisagismo.com.br",
+        "wordpress_api_url": "https://blog.cortevisagismo.com.br/wp-json/wp/v2",
+        "instagram_username": "corte.visagismo",
+        "instagram_required": settings.corte_instagram_required,
+        "instagram_user_id": settings.corte_instagram_user_id,
+        "instagram_access_token": settings.corte_instagram_access_token,
+        "default_post_image_url": None,
+    })

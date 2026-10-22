@@ -1,3 +1,15 @@
+# Serviço compartilhado Zion e Côrte
+
+Use a mesma instalação Passenger existente. As rotas /zion/posts e /corte/posts
+selecionam os clientes; /posts continua atendendo Zion. A mesma API_KEY vale para ambos.
+Configure CORTE_MONGODB_DATABASE=corte (diferente do banco Zion) e, opcionalmente,
+CORTE_INSTAGRAM_ACCESS_TOKEN e CORTE_INSTAGRAM_USER_ID para corte.visagismo.
+Inclua os domínios Côrte em CORS_ALLOW_ORIGINS se essa variável já estiver definida.
+O worker automático e worker_job.py processam ambos os clientes. Não crie outra
+instalação nem copie o .env do projeto separado. Reinicie a aplicação após atualizar.
+
+---
+
 # Publicar no cPanel
 
 Esta aplicação usa Python 3.12 e Passenger. O worker inicia junto com a aplicação,

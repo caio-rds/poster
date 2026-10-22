@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 IMAGE_HOSTS = {
+    "blog.cortevisagismo.com.br", "www.cortevisagismo.com.br", "cortevisagismo.com.br",
     "cms.zionsoftwarehouse.com.br", "zionsoftwarehouse.com.br",
     "www.zionsoftwarehouse.com.br",
 }

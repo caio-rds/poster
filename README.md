@@ -1,4 +1,46 @@
-# Zion Posts API
+# API de posts — Zion e Côrte
+
+Um único serviço e implantação atendem os dois clientes. O mesmo fluxo de coleta,
+geração e deduplicação é utilizado, com fontes, prompt e banco separados por cliente.
+
+| Operação | Zion | Côrte |
+| --- | --- | --- |
+| Listar | `/zion/posts` | `/corte/posts` |
+| Próximo | `/zion/posts/next` | `/corte/posts/next` |
+| Atualizar status | `/zion/posts/{id}/status` | `/corte/posts/{id}/status` |
+| Imagem | `/zion/posts/{id}/image.jpg` | `/corte/posts/{id}/image.jpg` |
+
+As rotas antigas `/posts...` continuam apontando para Zion. `/health` é compartilhado.
+Todas as rotas de dados usam o mesmo header `apikey`; clientes desconhecidos retornam 404.
+A rota escolhe o cliente; filtros, payloads e respostas mantêm o contrato existente.
+Os links de imagem retornados incluem o prefixo correto, inclusive com PUBLIC_API_URL.
+
+Usa a mesma MONGODB_URI, em databases diferentes: MONGODB_DATABASE (Zion, atual) e
+CORTE_MONGODB_DATABASE (Côrte, padrão corte). A configuração recusa bancos iguais.
+Não há migração dos dados existentes: posts, histórico, embeddings, cache de imagens e
+locks ficam dentro do banco de cada cliente. A chave compartilhada dá acesso aos dois;
+o prefixo é seleção de cliente, não uma permissão por cliente.
+
+API e worker passam a processar ambos os clientes. `python worker_job.py` executa um
+ciclo para cada um; falha de coleta de um cliente não impede o outro. A rotina continua
+usando leases separados, inclusive quando executada pelo processo da API e pelo cron.
+
+A Côrte coleta https://blog.cortevisagismo.com.br/wp-json/wp/v2/posts, preservando o
+permalink real de cada artigo. Quando a API de mídia está bloqueada, busca og:image
+na página pública com validação de domínios e redirecionamentos. O prompt é dedicado a
+visagismo masculino e design de cabelo/barba. Imagens são das fontes; não são geradas por IA.
+
+OpenAI e API_KEY são compartilhados. Instagram Côrte é opcional e usa exclusivamente
+CORTE_INSTAGRAM_ACCESS_TOKEN, CORTE_INSTAGRAM_USER_ID e CORTE_INSTAGRAM_REQUIRED,
+validando o perfil corte.visagismo. As variáveis INSTAGRAM_* existentes continuam da Zion.
+Se CORS_ALLOW_ORIGINS já estiver definido no ambiente, acrescente os domínios Côrte.
+Consulte .env.example. Basta reiniciar/reimplantar o serviço Zion com este código.
+
+Os testes usam mocks e não geram posts reais nem consomem filas em produção.
+
+---
+
+# Configuração e contrato original Zion
 
 API em **Python 3.12 + FastAPI + MongoDB**, com worker independente que coleta conteúdo da
 Zion Software House e utiliza um agente editorial OpenAI para preparar posts em português.

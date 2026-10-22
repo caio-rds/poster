@@ -16,7 +16,7 @@ from app.collectors import (
     WordPressCollector,
     blog_source_urls,
 )
-from app.config import Settings, get_settings
+from app.config import Settings, client_settings, get_settings
 from app.database import create_client, ensure_indexes
 from app.errors import failure_hint
 from app.models import Draft, Source
@@ -218,8 +218,7 @@ class WorkerLease:
             await self.collection.delete_one({"_id": "editorial", "owner": self.owner})
 
 
-async def run(once=False):
-    settings = get_settings()
+async def run_client(settings: Settings, once=False):
     agent = EditorialAgent(settings)
     mongo = create_client(settings)
     try:
@@ -239,7 +238,7 @@ async def run(once=False):
                     await ensure_indexes(db)
                     await lease.run(lambda: pipeline.cycle(client))
                 except Exception as exc:
-                    logger.error("Ciclo falhou: %s", failure_hint(exc))
+                    logger.error("Ciclo %s falhou: %s", settings.client_slug, failure_hint(exc))
                     if once:
                         raise
                     delay = settings.worker_retry_seconds
@@ -249,6 +248,16 @@ async def run(once=False):
     finally:
         await agent.client.close()
         await mongo.close()
+
+
+async def run(once=False):
+    settings = get_settings()
+    profiles = [client_settings(settings, name) for name in ("zion", "corte")]
+    results = await asyncio.gather(
+        *(run_client(profile, once=once) for profile in profiles), return_exceptions=True
+    )
+    if any(isinstance(result, BaseException) for result in results):
+        raise RuntimeError("Falha em um ou mais workers; confira os logs por cliente")
 
 
 def main(default_once=False):

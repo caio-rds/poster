@@ -123,6 +123,9 @@ LEGACY_BLOG_SLUGS = {
 
 def blog_source_urls(url: str) -> list[str]:
     """Permalinks do mesmo artigo, incluindo URLs antigas de idiomas."""
+    if urlsplit(url).hostname == "blog.cortevisagismo.com.br":
+        normalized = clean_url(url)
+        return [normalized, normalized.rstrip("/") + "/"]
     if not is_site_url(url) or not is_blog_url(url):
         return []
     slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
@@ -313,6 +316,29 @@ class WordPressCollector:
         self.client = client
         self.settings = settings
 
+    async def page_image(self, url: str) -> str | None:
+        # O WordPress da Côrte bloqueia /media, mas publica og:image no artigo.
+        try:
+            for _ in range(6):
+                if urlsplit(url).hostname not in {"blog.cortevisagismo.com.br", "www.cortevisagismo.com.br", "cortevisagismo.com.br"}:
+                    return None
+                response = await self.client.get(url, follow_redirects=False)
+                if response.is_redirect:
+                    url = urljoin(url, response.headers.get("location", ""))
+                    continue
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                meta = soup.select_one('meta[property="og:image"]')
+                if meta and meta.get("content"):
+                    image_url = urljoin(url, meta["content"])
+                    from app.images import validate_image_url
+                    validate_image_url(image_url)
+                    return image_url
+                return None
+        except Exception as exc:
+            logger.warning("Imagem do artigo indisponível (%s): %s", type(exc).__name__, url)
+        return None
+
     async def collect(self):
         per_page = min(100, self.settings.max_blog_articles)
         page = 1
@@ -329,7 +355,7 @@ class WordPressCollector:
             for attempt in range(3):
                 try:
                     response = await self.client.get(
-                        f"{WORDPRESS_API}/posts", params=params, follow_redirects=False
+                        f"{self.settings.wordpress_api_url}/posts", params=params, follow_redirects=False
                     )
                     response.raise_for_status()
                     break
@@ -352,14 +378,21 @@ class WordPressCollector:
                     slug = post["slug"]
                     if not isinstance(slug, str) or not slug or any(c in slug for c in "/?#"):
                         raise ValueError("Slug inválido")
+                    url = f"{SITE}/blog/{slug}"
+                    if self.settings.client_slug == "corte":
+                        url = post["link"]
+                        if urlsplit(url).hostname != "blog.cortevisagismo.com.br":
+                            raise ValueError("Permalink fora do blog Côrte")
                     source = extract_source(
-                        post["content"]["rendered"], f"{SITE}/blog/{slug}", "blog"
+                        post["content"]["rendered"], url, "blog"
                     )
                     source.title = BeautifulSoup(post["title"]["rendered"], "html.parser").get_text(
                         " ", strip=True
                     )
                     source.external_id = str(post["id"])
                     source.image_url = featured_image_url(post)
+                    if self.settings.client_slug == "corte" and source.image_url is None:
+                        source.image_url = await self.page_image(source.url)
                     if post.get("date_gmt"):
                         source.published_at = datetime.fromisoformat(
                             post["date_gmt"].replace("Z", "+00:00")
@@ -395,8 +428,8 @@ class InstagramCollector:
             f"{base}/{user_id}", params={"fields": "username"}, headers=headers
         )
         profile.raise_for_status()
-        if profile.json().get("username", "").lower() != "zionsoftwarehouse":
-            raise ValueError("As credenciais devem corresponder ao perfil zionsoftwarehouse")
+        if profile.json().get("username", "").lower() != self.settings.instagram_username.lower():
+            raise ValueError("As credenciais devem corresponder ao perfil " + self.settings.instagram_username)
         params = {"fields": "id,caption,permalink,timestamp", "limit": "100"}
         for _ in range(self.settings.instagram_max_pages):
             response = await self.client.get(
