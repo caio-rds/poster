@@ -64,7 +64,12 @@ class PostRepository:
             upsert=True,
         )
 
-    async def next_post(self):
+    async def next_post(self, *, mark_posted: bool = True):
+        if not mark_posted:
+            return await self.db.posts.find_one(
+                {"status": "ready", "archived": {"$ne": True}},
+                sort=[("created_at", 1), ("_id", 1)],
+            )
         now = datetime.now(UTC)
         return await self.db.posts.find_one_and_update(
             {"status": "ready", "archived": {"$ne": True}},

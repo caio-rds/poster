@@ -58,6 +58,26 @@ async def test_next_post_excludes_internal_fields(api, document):
     assert response.json()["posted_at"]
     assert "embedding" not in response.json()
     assert "content_hash" not in response.json()
+    repo.next_post.assert_awaited_once_with(mark_posted=True)
+
+
+@pytest.mark.parametrize("prefix", ["", "/zion", "/corte"])
+async def test_next_post_preview(api, document, prefix):
+    client, repo = api
+    repo.next_post.return_value = document
+    response = await client.get(f"{prefix}/posts/next?mark_posted=false")
+    assert response.status_code == 200
+    assert response.json()["id"] == str(document["_id"])
+    assert response.json()["status"] == "ready"
+    assert response.json()["posted_at"] is None
+    repo.next_post.assert_awaited_once_with(mark_posted=False)
+
+
+async def test_next_post_rejects_invalid_mark_posted(api):
+    client, repo = api
+    response = await client.get("/posts/next?mark_posted=invalid")
+    assert response.status_code == 422
+    repo.next_post.assert_not_awaited()
 
 
 async def test_empty_queue(api):

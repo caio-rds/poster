@@ -47,7 +47,9 @@ api_key_header = APIKeyHeader(
 )
 
 
-async def authenticate(request: Request, apikey: Annotated[str | None, Security(api_key_header)] = None):
+async def authenticate(
+    request: Request, apikey: Annotated[str | None, Security(api_key_header)] = None
+):
     expected = request_settings(request).api_key.get_secret_value()
     if not expected:
         raise HTTPException(status_code=503, detail="API_KEY não configurada")
@@ -76,7 +78,9 @@ def repository(request: Request) -> PostRepository:
 
 def serialize(document: dict, request: Request) -> PostOut:
     prefix = f"/{selected_client(request)}" if "client" in request.path_params else ""
-    return public_post(document, str(request.base_url), settings=request_settings(request), route_prefix=prefix)
+    return public_post(
+        document, str(request.base_url), settings=request_settings(request), route_prefix=prefix
+    )
 
 
 Repo = Annotated[PostRepository, Depends(repository)]
@@ -94,8 +98,14 @@ async def health() -> dict[str, str]:
 
 
 @router.get("/posts/next", response_model=PostOut | None)
-async def next_post(repo: Repo, request: Request):
-    document = await repo.next_post()
+async def next_post(
+    repo: Repo,
+    request: Request,
+    mark_posted: Annotated[
+        bool, Query(description="Use false para testar sem marcar o post como publicado.")
+    ] = True,
+):
+    document = await repo.next_post(mark_posted=mark_posted)
     if document is None:
         return None
     return serialize(document, request)

@@ -175,6 +175,26 @@ async def test_unique_constraint_rejects_exact_duplicate():
     assert await PostRepository(db).insert({}) is None
 
 
+@pytest.mark.parametrize("empty", [False, True])
+async def test_next_post_preview_does_not_write(empty):
+    db = SimpleNamespace(posts=AsyncMock())
+    now = datetime.now(UTC)
+    original = {
+        "_id": ObjectId(), "status": "ready", "posted_at": None,
+        "created_at": now, "updated_at": now,
+    }
+    db.posts.find_one.return_value = None if empty else original.copy()
+    repo = PostRepository(db)
+    for _ in range(2):
+        assert await repo.next_post(mark_posted=False) == (None if empty else original)
+    db.posts.find_one.assert_awaited_with(
+        {"status": "ready", "archived": {"$ne": True}},
+        sort=[("created_at", 1), ("_id", 1)],
+    )
+    db.posts.find_one_and_update.assert_not_awaited()
+    db.posts.update_one.assert_not_awaited()
+
+
 async def test_mark_posted_is_idempotent():
     db = SimpleNamespace(posts=AsyncMock())
     original = {"_id": ObjectId(), "status": "posted", "posted_at": datetime.now(UTC)}

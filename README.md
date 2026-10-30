@@ -116,6 +116,7 @@ quando a URI aponta para Atlas. `MONGODB_DATABASE` define a database de posts ne
 ```powershell
 $headers = @{'apikey'='sua-chave-do-env'}
 Invoke-RestMethod http://localhost:8000/posts/next -Headers $headers
+Invoke-RestMethod 'http://localhost:8000/posts/next?mark_posted=false' -Headers $headers
 Invoke-RestMethod 'http://localhost:8000/posts?status=ready&offset=0&limit=20' -Headers $headers
 Invoke-RestMethod -Method Patch -Uri 'http://localhost:8000/posts/SEU_ID/status' `
   -Headers $headers -ContentType 'application/json' -Body '{"status":"posted"}'
@@ -159,6 +160,12 @@ O consumidor não precisa chamar o PATCH após publicar. O status registra a ret
 se a publicação externa falhar ou a resposta se perder, ele permanece `posted` e não volta
 automaticamente à fila. Evite pré-busca, cache e chamadas de teste nessa rota em produção;
 use `/posts` para consultar sem consumir.
+
+Para testar a mesma resposta de `/posts/next` sem consumir a fila, use
+`GET /posts/next?mark_posted=false`. Retorna o post `ready` mais antigo sem alterar
+`status`, `posted_at` ou `updated_at`; a fila vazia continua retornando `null`.
+O parâmetro também funciona em `/zion/posts/next` e `/corte/posts/next`.
+Sem o parâmetro (ou com `mark_posted=true`), a rota continua marcando como `posted`.
 
 Exemplo de post retornado:
 
