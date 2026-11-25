@@ -7,6 +7,7 @@ from openai import AsyncOpenAI
 
 from app.collectors import USER_AGENT, WordPressCollector
 from app.config import client_settings, get_settings
+from app.corte import download_corte_image, editorial_posts
 from app.database import create_client
 from app.errors import failure_hint
 
@@ -26,24 +27,32 @@ async def check():
         for profile in profiles:
             db = mongo[profile.mongodb_database]
             count = await db.posts.count_documents({"status": "ready"})
-            print(f"MongoDB {profile.client_slug}: database={profile.mongodb_database}; prontos={count}")
+            print(
+                f"MongoDB {profile.client_slug}: banco={profile.mongodb_database}, prontos={count}"
+            )
     except Exception as exc:
         print(failure_hint(exc))
         ok = False
     finally:
         await mongo.close()
     async with httpx.AsyncClient(timeout=15, headers={"User-Agent": USER_AGENT}) as client:
-        for profile in profiles:
-            try:
-                collector = WordPressCollector(client, profile)
-                source = await anext(collector.collect())
-                print(f"Blog {profile.client_slug}: artigo coletado; imagem={bool(source.image_url)}")
-            except Exception as exc:
-                print(f"{profile.client_slug}: {failure_hint(exc)}")
-                ok = False
+        try:
+            collector = WordPressCollector(client, settings)
+            source = await anext(collector.collect())
+            print(f"Blog Zion: artigo coletado; imagem={bool(source.image_url)}")
+        except Exception as exc:
+            print(f"Zion: {failure_hint(exc)}")
+            ok = False
+    try:
+        posts = editorial_posts()
+        await download_corte_image(posts[0].file_id)
+        print(f"Drive Côrte: {len(posts)} pares de foto e legenda; download verificado")
+    except Exception as exc:
+        print(f"Drive Côrte: {failure_hint(exc)}")
+        ok = False
     key = settings.openai_api_key.get_secret_value()
     if not key:
-        print("OPENAI_API_KEY: ausente; o worker não pode gerar posts")
+        print("OPENAI_API_KEY: ausente; o worker Zion não pode gerar posts")
         ok = False
     else:
         async with AsyncOpenAI(api_key=key, timeout=15, max_retries=0) as client:
@@ -58,11 +67,10 @@ async def check():
             except Exception as exc:
                 print(failure_hint(exc))
                 ok = False
-    for profile in profiles:
-        if not profile.instagram_user_id or not profile.instagram_access_token.get_secret_value():
-            print(f"Instagram {profile.client_slug}: credenciais ausentes; apenas blog habilitado")
-            if profile.instagram_required:
-                ok = False
+    if not settings.instagram_user_id or not settings.instagram_access_token.get_secret_value():
+        print("Instagram Zion: credenciais ausentes; apenas blog habilitado")
+        if settings.instagram_required:
+            ok = False
     return ok
 
 

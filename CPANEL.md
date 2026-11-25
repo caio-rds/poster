@@ -2,8 +2,9 @@
 
 Use a mesma instalação Passenger existente. As rotas /zion/posts e /corte/posts
 selecionam os clientes; /posts continua atendendo Zion. A mesma API_KEY vale para ambos.
-Configure CORTE_MONGODB_DATABASE=corte (diferente do banco Zion) e, opcionalmente,
-CORTE_INSTAGRAM_ACCESS_TOKEN e CORTE_INSTAGRAM_USER_ID para corte.visagismo.
+Configure `CORTE_MONGODB_DATABASE=corte` com um banco diferente do banco Zion.
+Mantenha `app/corte_posts.json` junto ao código da aplicação para o catálogo de
+Balneário Camboriú. A fila da Côrte carrega as fotos do Google Drive.
 Inclua os domínios Côrte em CORS_ALLOW_ORIGINS se essa variável já estiver definida.
 O worker automático e worker_job.py processam ambos os clientes. Não crie outra
 instalação nem copie o .env do projeto separado. Reinicie a aplicação após atualizar.

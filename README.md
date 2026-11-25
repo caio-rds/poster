@@ -1,7 +1,7 @@
 # API de posts — Zion e Côrte
 
-Um único serviço e implantação atendem os dois clientes. O mesmo fluxo de coleta,
-geração e deduplicação é utilizado, com fontes, prompt e banco separados por cliente.
+Um único serviço e implantação atendem os dois clientes, com fluxos editoriais e bancos
+separados por cliente.
 
 | Operação | Zion | Côrte |
 | --- | --- | --- |
@@ -25,14 +25,18 @@ API e worker passam a processar ambos os clientes. `python worker_job.py` execut
 ciclo para cada um; falha de coleta de um cliente não impede o outro. A rotina continua
 usando leases separados, inclusive quando executada pelo processo da API e pelo cron.
 
-A Côrte coleta https://blog.cortevisagismo.com.br/wp-json/wp/v2/posts, preservando o
-permalink real de cada artigo. Quando a API de mídia está bloqueada, busca og:image
-na página pública com validação de domínios e redirecionamentos. O prompt é dedicado a
-visagismo masculino e design de cabelo/barba. Imagens são das fontes; não são geradas por IA.
+As novas publicações da Côrte são sobre a unidade de Balneário Camboriú. O catálogo
+em `app/corte_posts.json` associa cada legenda editorial a uma foto das pastas
+[BALNEARIO](https://drive.google.com/drive/folders/1mI0EyYJYHIK2OsLud3gzsDOmAxYRawZG)
+e [FOTOS JPEG](https://drive.google.com/drive/folders/1ErmjRe_SeL_ZF1kH6q1q9gvgGfeBokiY).
+No ciclo da Côrte, o worker baixa e armazena o JPEG antes de enfileirar o post.
+A foto recebe `image_status=marcado` no MongoDB da Côrte, com um ID do Drive único
+mesmo após a publicação. As fotos precisam estar acessíveis pelo link no Drive para
+o primeiro download. As visualizações da fila não consomem nem desmarcam fotos.
 
-OpenAI e API_KEY são compartilhados. Instagram Côrte é opcional e usa exclusivamente
-CORTE_INSTAGRAM_ACCESS_TOKEN, CORTE_INSTAGRAM_USER_ID e CORTE_INSTAGRAM_REQUIRED,
-validando o perfil corte.visagismo. As variáveis INSTAGRAM_* existentes continuam da Zion.
+A fila da Côrte só oferece posts desse catálogo, e o histórico publicado permanece
+disponível. Acrescente novos pares de legenda e foto ao catálogo para continuar a fila.
+A `API_KEY` é compartilhada. O uso de OpenAI e da coleta do Instagram no worker é da Zion.
 Se CORS_ALLOW_ORIGINS já estiver definido no ambiente, acrescente os domínios Côrte.
 Consulte .env.example. Basta reiniciar/reimplantar o serviço Zion com este código.
 

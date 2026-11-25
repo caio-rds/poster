@@ -36,11 +36,22 @@ async def test_worker_disabled_does_not_start():
     assert worker.task is None
 
 
-async def test_worker_missing_openai_key_is_reported(caplog):
+async def test_missing_openai_key_still_starts_corte_worker(monkeypatch, caplog):
+    started = asyncio.Event()
+
+    async def operation(settings):
+        assert settings.client_slug == "corte"
+        started.set()
+        await asyncio.Future()
+
+    monkeypatch.setattr("app.runtime.run_client", operation)
     worker = BackgroundWorker(Settings(_env_file=None))
     worker.start()
-    assert worker.task is None
-    assert "OPENAI_API_KEY" in caplog.text
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        assert "Worker Zion desativado" in caplog.text
+    finally:
+        await worker.stop()
 
 
 async def test_supervisor_retries_worker_failure(monkeypatch):

@@ -45,12 +45,18 @@ def public_post(
 
 
 class PostRepository:
-    def __init__(self, db):
+    def __init__(self, db, *, corte=False):
         self.db = db
+        self.visible_posts = {"archived": {"$ne": True}}
+        if corte:
+            self.visible_posts["$or"] = [
+                {"status": "posted"},
+                {"origin": "drive", "image_status": "marcado"},
+            ]
 
     async def image_post(self, post_id: ObjectId):
         return await self.db.posts.find_one(
-            {"_id": post_id, "archived": {"$ne": True}}, {"image_url": 1}
+            {**self.visible_posts, "_id": post_id}, {"image_url": 1, "drive_image_id": 1}
         )
 
     async def cached_image(self, url: str) -> bytes | None:
@@ -67,19 +73,19 @@ class PostRepository:
     async def next_post(self, *, mark_posted: bool = True):
         if not mark_posted:
             return await self.db.posts.find_one(
-                {"status": "ready", "archived": {"$ne": True}},
+                {**self.visible_posts, "status": "ready"},
                 sort=[("created_at", 1), ("_id", 1)],
             )
         now = datetime.now(UTC)
         return await self.db.posts.find_one_and_update(
-            {"status": "ready", "archived": {"$ne": True}},
+            {**self.visible_posts, "status": "ready"},
             {"$set": {"status": "posted", "posted_at": now, "updated_at": now}},
             sort=[("created_at", 1), ("_id", 1)],
             return_document=ReturnDocument.AFTER,
         )
 
     async def list_posts(self, status, offset, limit):
-        query = {"archived": {"$ne": True}}
+        query = self.visible_posts.copy()
         if status:
             query["status"] = status
         total = await self.db.posts.count_documents(query)
@@ -95,12 +101,12 @@ class PostRepository:
     async def mark_posted(self, post_id: ObjectId):
         now = datetime.now(UTC)
         document = await self.db.posts.find_one_and_update(
-            {"_id": post_id, "status": "ready", "archived": {"$ne": True}},
+            {**self.visible_posts, "_id": post_id, "status": "ready"},
             {"$set": {"status": "posted", "posted_at": now, "updated_at": now}},
             return_document=ReturnDocument.AFTER,
         )
         return document or await self.db.posts.find_one(
-            {"_id": post_id, "archived": {"$ne": True}}
+            {**self.visible_posts, "_id": post_id}
         )
 
     async def nearest(self, vector, model, limit=5):

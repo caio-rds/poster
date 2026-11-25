@@ -4,6 +4,7 @@ import contextlib
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
 import httpx
 from pymongo import ReturnDocument
@@ -17,6 +18,7 @@ from app.collectors import (
     blog_source_urls,
 )
 from app.config import Settings, client_settings, get_settings
+from app.corte import queue_corte_posts
 from app.database import create_client, ensure_indexes
 from app.errors import failure_hint
 from app.models import Draft, Source
@@ -219,11 +221,11 @@ class WorkerLease:
 
 
 async def run_client(settings: Settings, once=False):
-    agent = EditorialAgent(settings)
+    corte = settings.client_slug == "corte"
+    agent = None if corte else EditorialAgent(settings)
     mongo = create_client(settings)
     try:
         db = mongo[settings.mongodb_database]
-        pipeline = Pipeline(db, agent, settings)
         lease = WorkerLease(db)
         transport = httpx.AsyncHTTPTransport(retries=3)
         async with httpx.AsyncClient(
@@ -232,11 +234,16 @@ async def run_client(settings: Settings, once=False):
             headers={"User-Agent": USER_AGENT},
             transport=transport,
         ) as client:
+            cycle = (
+                partial(queue_corte_posts, db)
+                if agent is None
+                else partial(Pipeline(db, agent, settings).cycle, client)
+            )
             while True:
                 delay = settings.worker_interval_seconds
                 try:
-                    await ensure_indexes(db)
-                    await lease.run(lambda: pipeline.cycle(client))
+                    await ensure_indexes(db, corte=corte)
+                    await lease.run(cycle)
                 except Exception as exc:
                     logger.error("Ciclo %s falhou: %s", settings.client_slug, failure_hint(exc))
                     if once:
@@ -246,7 +253,8 @@ async def run_client(settings: Settings, once=False):
                     return
                 await asyncio.sleep(delay)
     finally:
-        await agent.client.close()
+        if agent is not None:
+            await agent.client.close()
         await mongo.close()
 
 

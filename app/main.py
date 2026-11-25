@@ -12,6 +12,7 @@ from pymongo.errors import PyMongoError
 
 from app.config import Settings, client_settings, get_settings
 from app.cors import cors_options
+from app.corte import download_corte_image
 from app.database import create_client
 from app.images import download_jpeg
 from app.models import PostOut, PostPage, PostStatus, StatusUpdate
@@ -31,7 +32,7 @@ async def lifespan(app: FastAPI):
         db = client[settings.mongodb_database]
         app.state.repository = PostRepository(db)
         app.state.repositories = {
-            name: PostRepository(client[profile.mongodb_database])
+            name: PostRepository(client[profile.mongodb_database], corte=name == "corte")
             for name, profile in profiles.items()
         }
         app.state.worker = worker
@@ -149,7 +150,11 @@ async def post_image(post_id: str, repo: Repo, request: Request):
         raise HTTPException(404, "Post sem imagem")
     content = await repo.cached_image(url)
     if content is None:
-        content = await download_jpeg(url)
+        drive_id = document.get("drive_image_id")
+        if selected_client(request) == "corte" and drive_id:
+            content = await download_corte_image(drive_id)
+        else:
+            content = await download_jpeg(url)
         await repo.cache_image(url, content)
     return Response(
         content, media_type="image/jpeg",

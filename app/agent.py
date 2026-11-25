@@ -5,7 +5,6 @@ from openai import AsyncOpenAI
 from pydantic import Field, create_model
 
 from app.config import Settings
-from app.editorial import CORTE_INSTRUCTIONS
 from app.models import Draft, DuplicateDecision, Generation, Source
 from app.text import remove_emojis, remove_hashtags
 
@@ -137,7 +136,7 @@ class EditorialAgent:
         response = await self.client.responses.parse(
             model=self.settings.openai_model,
             input=[
-                {"role": "system", "content": CORTE_INSTRUCTIONS if self.settings.client_slug == "corte" else INSTRUCTIONS},
+                {"role": "system", "content": INSTRUCTIONS},
                 {
                     "role": "user",
                     "content": json.dumps(

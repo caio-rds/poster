@@ -87,6 +87,24 @@ async def test_id_from_another_client_is_not_found(clients):
     assert not repos["zion"].mock_calls
 
 
+async def test_corte_image_cache_miss_reads_the_selected_drive_file(clients, monkeypatch):
+    client, repos = clients
+    repo = repos["corte"]
+    item = repo.next_post.return_value
+    drive_id = "drive_photo_1"
+    image_url = f"https://drive.usercontent.google.com/download?id={drive_id}"
+    repo.image_post.return_value = {"image_url": image_url, "drive_image_id": drive_id}
+    repo.cached_image.return_value = None
+    downloader = AsyncMock(return_value=b"drive jpeg")
+    monkeypatch.setattr("app.main.download_corte_image", downloader)
+
+    response = await client.get(f"/corte/posts/{item['_id']}/image.jpg")
+    assert response.status_code == 200
+    assert response.content == b"drive jpeg"
+    downloader.assert_awaited_once_with(drive_id)
+    repo.cache_image.assert_awaited_once_with(image_url, b"drive jpeg")
+
+
 def test_corte_never_inherits_zion_instagram_credentials():
     settings = Settings(_env_file=None, instagram_user_id="zion-id",
                         instagram_access_token="zion-token", instagram_required=True)

@@ -16,7 +16,7 @@ IMAGE_HOSTS = {
 logger = logging.getLogger(__name__)
 
 
-def validate_image_url(url: str):
+def validate_image_url(url: str, *, hosts=IMAGE_HOSTS):
     try:
         parsed = urlsplit(url)
         port = parsed.port
@@ -24,7 +24,7 @@ def validate_image_url(url: str):
         raise HTTPException(502, "Origem de imagem inválida") from exc
     if (
         parsed.scheme != "https" or port not in (None, 443)
-        or parsed.hostname not in IMAGE_HOSTS or parsed.username or parsed.password
+        or parsed.hostname not in hosts or parsed.username or parsed.password
     ):
         raise HTTPException(502, "Origem de imagem não permitida")
 
@@ -45,8 +45,8 @@ def jpeg_bytes(content: bytes) -> bytes:
         raise HTTPException(502, "Arquivo de imagem inválido") from exc
 
 
-async def download_jpeg(url: str) -> bytes:
-    validate_image_url(url)
+async def download_jpeg(url: str, *, hosts=IMAGE_HOSTS) -> bytes:
+    validate_image_url(url, hosts=hosts)
     try:
         # The CMS accepts browser TLS/HTTP fingerprints but resets httpx connections.
         async with AsyncSession(impersonate="chrome", timeout=30) as client:
@@ -55,7 +55,7 @@ async def download_jpeg(url: str) -> bytes:
                 async with client.stream("GET", url, allow_redirects=False) as response:
                     if response.status_code in (301, 302, 303, 307, 308):
                         url = urljoin(url, response.headers["location"])
-                        validate_image_url(url)
+                        validate_image_url(url, hosts=hosts)
                         continue
                     response.raise_for_status()
                     content = bytearray()
@@ -67,4 +67,8 @@ async def download_jpeg(url: str) -> bytes:
         raise HTTPException(502, "Redirecionamentos demais na imagem")
     except (RequestsError, KeyError) as exc:
         logger.warning("Falha ao baixar imagem %s: %s %r", url, type(exc).__name__, exc)
-        raise HTTPException(502, "Não foi possível baixar a imagem do blog") from exc
+        detail = (
+            "Não foi possível baixar a imagem do blog"
+            if hosts == IMAGE_HOSTS else "Não foi possível baixar a imagem do Drive"
+        )
+        raise HTTPException(502, detail) from exc
